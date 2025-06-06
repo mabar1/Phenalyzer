@@ -1,0 +1,5 @@
+*.png
+*.jpg
+QuPath_tsv_inputs/*.tsv
+output/*
+*.qs
