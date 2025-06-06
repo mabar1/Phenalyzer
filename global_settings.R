@@ -1,4 +1,4 @@
-# if change code, use git diff > didf.txt, drop it on copilot and ask to make a message out of it
+# if change code, use git diff > didf.txt, drop it on copilot and ask to make a commit message out of it
 run.experimental.code<-0
 
 ########################## STAGE 0 SETTINGS ##########################

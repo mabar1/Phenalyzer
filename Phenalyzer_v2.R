@@ -3393,23 +3393,6 @@ if( identical(all.gate.flags, character(0)) ){
       
       is.highpass <-  ifelse(   grepl(".highpass", f)   , 1, 0 ) 
     
-    
-    
-    
-#   l[[list.pos]] <- 
-#      plot.scatter.gate.v2(indata=subset(cell.dat, Batch==i & Tissue %!in% postive.control.Tissue.name ) , 
-#                                          inx=markercomparision[[m]][1] , 
-#                                          iny=markercomparision[[m]][2], 
-#                                          incol= markercomparision[[m]][3],
-#                                          dot.size = 1.2, # default 1
-#                                          dot.alpha = 0.9, # default 0.2
-#                                          gate.flag = f,
-#                                          gate.line.alpha=1,
-#                                          passed.gate.color = "#308441",
-#                                          rejected.gate.color = "#F6CD7A"   # default "#EB8563"
-#    )
-#    
-#    list.pos <- list.pos+1
 
     
    l[[list.pos]] <-  
@@ -3427,17 +3410,7 @@ if( identical(all.gate.flags, character(0)) ){
     )
    
    list.pos <- list.pos+1
-    
-  #    plot.scatter.density(indata=temp.OTdata , #cell.dat , 
-  #                         inx=markercomparision[[m]][1], 
-  #                         iny=markercomparision[[m]][2],
-  #                         titlestring = paste0("TMA: ",i),
-  #                         dot.size = 0.2 # default NULL for plotting dots, set size and it will plot circles of size dot.size. both are drawn with fixed alpha 0.1
-  #    )
-  #  
-  #  list.pos <- list.pos+1
-    
-
+  
     }# end gate.printing is needed
     
    
