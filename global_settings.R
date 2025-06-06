@@ -1,8 +1,15 @@
 run.experimental.code<-0
+
 ########################## STAGE 0 SETTINGS ##########################
 
+# helper functions are stored in the utils file
+# define the version you want to use here:
+# use it for project-specific stuff
+# e.g: "0" will load utils_v0.R 
+utils_version <- "0" 
+
 # Do we start from scratch or re-load an old run?
-# - - - - - - - - - - - - - - - - - - - - - - - - 
+#-------------------------------------------------
 # 0: Load all data saved away from previous run. 
 # Caution1: for 0 changes in the metadata file wont be incorporated since you skip STAGE 0
 # Caution2: Since you essentially skip STAGE 0-3 entirely, you need to supply a good amount of variables manually here: "COPY-PASTE VARIABLES IF YOU DO NOT GENERATE CELL.DAT ANEW"
@@ -10,10 +17,10 @@ run.experimental.code<-0
 rebuild.cell.data.anew <- 1 # 1 recommended 
 
 # for rebuild.cell.data.anew=0: Reload an old run, so get backup data frames (such as gated.cell.dat) from this date:
-date.of.clustered.gated.subsets <- 20231018 # date from where to load data: use 18th Oct to include the trashbin gate and proper cluster numbers in G2
+day.to.reload.data <- 20231018 # date from where to load data: use 18th Oct to include the trashbin gate and proper cluster numbers in G2
 
 # Get the files from this add-masks integration run:
-# - - - - - - - - - - - - - - - - - - - - - - - - - 
+#-------------------------------------------------
 # 20230113 comes from a global segementation model with all 4 TMAs
 # 20240524 is Steinbock but now with CK18 channel but mask.tiff in cell.dat somehow
 # 20240525 finally clean and good
@@ -22,14 +29,16 @@ date.of.spatial.dat <- 20240525 # do.fast.extract did that one
 
 
 # Get the metadata 
-# - - - - - - - - - - - - - - - - - - -
+#-------------------------------------------------
 # Point to Metadata stored as excel sheet with an absolute path. This way you know exaclty what file was loaded.
-#metadatapath <- c("D:/IMI/IMC/IM - Matthaus Felsenstein/Metadata_Project Matthäus Isis_JJ.xlsx") # cross-checked by Juliette, added the gate thresholds 20230313
-# use additional metadata for the re-do of the data at v17+ 
+# for gate thresholds, is is crucial that they have the format:
+# CD123.highpass, CD122.lowpass
+# furthermore you need area.highpass and area.lowpass columns in square micrometers
+# this select cells area.highpass < segmentation areas < .lowpass area penalties
 metadatapath <- c("Small TMA_testing_metadata.xlsx") # cross-checked by Juliette, added the gate thresholds 20230313
 
 # Data transformation and normalization:
-# - - - - - - - - - - - - - - - - - - -
+#-------------------------------------------------
 # Transformation will create columns with a "_t5", short for asinh transformed with cofactor 5 (ry different factors and check if heatmap makes sense)
 # If this is turned on, the normalization will happen on these columns and not the raw data anymore!
 # Min-max normalize transformed signals? Additional to _t5, they will get "_m0m1" showing you the boundaries you have defined
@@ -50,7 +59,7 @@ cellular.segment.readout <- "Mean" # or "Median", "Min", "Max"
 
 
 # Spillover correction via excel sheet:
-# - - - - - - - - - - - - - - - - - - -
+#-------------------------------------------------
 correct.spill.over <- 0 
 # 20211021_BeCeFa_spillmat.xlsx is from the panel design
 # 20200617_Messung6_sm.xlsx is from Franziska given on 20220601
@@ -62,19 +71,19 @@ correct.spill.over <- 0
 
 
 # Tissue types supplied via metadata. Positive Control core name
-# - - - - - - - - - - - - - - - - - - - - - - - - -
+#-------------------------------------------------
 tissue.type.col <- "Tissue.type"
 postive.control.Tissue.name <- "spleen" # name of the tissue as defined in the metadata file. Watch out, these cells are deleted later on.
 
 # depreciated:
 # Positive Control coreBatch normalization of markers present on pos-ctr. 
-# - - - - - - - - - - - - - - - - - - - - - - - - -
+#-------------------------------------------------
 # if you want to do spillover and batch normalization, run stage 0 the first time with correct.spill.over 0 as well as scaling factors off
 # after you checked currently selected "Cellular cols", turn spillover and scaling on for the second+ runs (no worry, I will run it only once)
 # IMPORTANT: if you perform batch normalization, leave calculate.scaling.factors on 1 for the upcoming stages. Do NOT turn that back to 0!
 calculate.scaling.factors <- 0 # do batch normalization: 1, off: 0
 # Batchnormalization: Markers to normalize at the given percentile across all TMA. 
-# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+#-------------------------------------------------
 # Data will be rescaled onto the n-th percentile of one marker
 # The one TMA whose set percentile signal is closest to the median of all TMA percentiles becomes the anchor sample: 
 # The anchor sample signal is then used to calculate the individual scaling factors for the remaining TMAs 
@@ -110,7 +119,7 @@ batch.normalization.matrix <- c(
 
 
 # Define which markers are transformed and normalized 
-# - - - - - - - - - - - - - - - - - - - - - - - - - -
+#-------------------------------------------------
 
 # since v18-ish we do no longer use column numbers to pull the markers since this is very fragile.
 # instead we supply the markers and let the code build up the column name by itself. 
@@ -159,7 +168,7 @@ Markers2Process <- c(
 
 
 # Set the order of the markers to show up in the heatmap 
-# - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+#-------------------------------------------------
 # this needs manual adaptation. All markers that go into clustering will be plotted in the heatmap. 
 # you need them all in this list and give them some order that helps looking at the heatmap:
 
@@ -178,7 +187,7 @@ global.marker.order <-Markers2Process
 
 
 # Define key columns supplied via metadata file
-# - - - - - - - - - - - - - - - - - - - - - - - 
+#-------------------------------------------------
 # here we just plug the col names from the sample.meta: see above: # so from now on we need to all Sample as Sample_week Group as Diet Batch as Batch
 roi.col <- 'ROI'
 #sample.col we had Sample_week, but this does not allow me to split afterwards "Sample_week"
@@ -192,7 +201,7 @@ batch.col <- 'Image'
 
 
 # Define marker combinations that you need to look at when finding your gating routine
-# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+#-------------------------------------------------
 # While plotting the scatter plot, the code will use different coloring:
 #  1) if no gate is present for any of the two markers, the plot comes with a soothing blue
 #  2) if a gate is found, the cells are color-coded according whether they passed the gate or not
@@ -213,7 +222,7 @@ scatter.plots <- list(
 
 
 # Quality Control and plots for setting up gating thresholds:
-# - - - - - - - - - - - - - - - -
+#-------------------------------------------------
 # 1: Check positions of gates and segmentation area penalties?
 plot.TMAwise.gates <- 0
 # 2: Check the distribution of cell segementation area across TMAs and tissues?
@@ -235,7 +244,7 @@ scatterplots.gatingsteps.packaging = "marker"#-wise
 
 # Set up gating routine (first part)
 # -> the second is found in the code at "SET UP GATING ROUTINE")
-# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+#-------------------------------------------------
 
 #lets define some names for the gated subsets that we can use to store the files with unique names as we run through the GATEsubset:
 # be aware that we gate all bounced back cells in an additional gate, the trash bin gate so to say. 

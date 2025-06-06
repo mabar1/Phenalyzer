@@ -1,6 +1,77 @@
 # Advanced spatial 2 - modified functions.R changed to: Phenalyzer_utils.R on 20250328 since PCF is incomaptible with the old code
 
-# Lets make a wrapper function to take care of all transformation and normalization in one go:
+
+#--------------------------------------
+# initialize stage0 varibables:
+#--------------------------------------
+
+initialize_stage_0_variables <- function(cell.dat, 
+                                        scatter.plots, 
+                                        transform.rawdata,
+                                       qupath.separator, 
+                                       cellular.segment.compartment, 
+                                       cellular.segment.readout, 
+                                       asinh.cofactor) {
+  
+  # Store the image and core names away for the upcoming plotting machines
+  all_images <- unique(cell.dat$Image)
+  amount.of.TMAs <- length(all_images)
+  
+  all_cores <- unique(cell.dat$TMA.ID_core)
+  amount.of.cores <- length(all_cores)
+  
+  # In the global settings, we work only with the marker names for convenience.
+  # We push the proper column names into the markercomparision list:
+  # Now there is a chance you dont want to transform, in that case these columns might not even exist:
+  if (transform.rawdata == TRUE) {
+    markercomparision <- lapply(scatter.plots, function(x) {
+      ifelse(is.na(x), NA,
+        paste0(
+          x,
+          qupath.separator,
+          cellular.segment.compartment,
+          qupath.separator,
+          cellular.segment.readout,
+          "_t", asinh.cofactor
+        )
+      )
+    })
+  } else {
+    # In this case the transform flag does not exist but only the raw columns:
+    markercomparision <- lapply(scatter.plots, function(x) {
+      ifelse(is.na(x), NA,
+        paste0(
+          x,
+          qupath.separator,
+          cellular.segment.compartment,
+          qupath.separator,
+          cellular.segment.readout
+        )
+      )
+    })
+  }
+  
+  # Return as a list instead of global assignment
+  return(list(
+    all_images = all_images,
+    amount.of.TMAs = amount.of.TMAs,
+    all_cores = all_cores,
+    amount.of.cores = amount.of.cores,
+    markercomparision = markercomparision
+  ))
+  
+}
+
+
+
+
+
+
+
+#--------------------------------------
+# transformation and normalization:
+#--------------------------------------
+
 do.data.normalization <- function (dat, 
                                    use.cols, 
                                    do.transform = FALSE,
@@ -83,8 +154,9 @@ do.data.normalization <- function (dat,
 
 
 
-
-# lets make a wrapper function for the spill-over matrix correction of RAW data:
+#--------------------------------------
+# IMC: spill-over matrix correction
+#--------------------------------------
 do.spill.over.corr <- function( dat = cell.dat,
                                 spillover.matrix.path = spillover.matrix.path,
                                 donor.col.name = "acq.chnl"
@@ -221,6 +293,9 @@ do.spill.over.corr <- function( dat = cell.dat,
 
 
 
+#--------------------------------------
+# Heatmap
+#--------------------------------------
 
 # the old heatmap wrapper is gonna be depreciated soon. we use complex heatmap for this. Here are the functions we need:
 fh = function(x) fastcluster::hclust(dist(x))
@@ -543,7 +618,9 @@ make.pheatmap <- function (dat,
 
 
 
-
+#--------------------------------------
+# Colour plot functions
+#--------------------------------------
 make.colour.plot <- function (dat, x.axis, y.axis, 
                               point.alpha,  # I added an alpha channel for the geom_point for col.type=factor coloring plots
                               col.axis = NULL, col.type = "continuous", 
@@ -902,12 +979,6 @@ make.colour.plot <- function (dat, x.axis, y.axis,
   }
   return(p)
 } # end function def make.colour.plot
-
-
-
-
-
-
 
 
 make.colour.plot.adapted <- function (dat, x.axis, y.axis, 
@@ -1318,20 +1389,6 @@ make.colour.plot.adapted <- function (dat, x.axis, y.axis,
   }
   return(p)
 } # end function def make.colour.plot.adapted
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 # Adapt some functions. These are based on v1.0.0 functions, but the adaptation is coming from when I tweaked them in 0.5.4. 
@@ -1748,18 +1805,9 @@ make.spatial.plot.adapted <- function(dat, # spatial data object
 }#end make.spatial.plot adaptation
 
 
-
-
-
-
-#CD45_Er168, ~GLP.1R_Yb174
-
-# this function requires three more variables that get produced as the engine runs trhough the markercomparision in a m-loop:
-# it will strip off the _*isotope* and create a marker string of the AB:
-#xMarker <- sub("_[^_]+$", "", markercomparision[[m]][1] )
-#yMarker <- sub("_[^_]+$", "", markercomparision[[m]][2] )
-#colorMarker <- sub("_[^_]+$", "", markercomparision[[m]][3] )  
-# whith this strings, we match back in the meta or the multisegmented lines to plot additional stuff
+#--------------------------------------
+# Gating plotting functions
+#--------------------------------------
 
 
 plot.scatter.gate <- function(indata, 
@@ -2029,9 +2077,6 @@ plot.scatter.gate <- function(indata,
   
 } # end function def  plot.scatter.gate
 
-
-
-
 plot.scatter.gate.v2 <- function(indata, 
                                  inx, 
                                  iny, 
@@ -2247,8 +2292,6 @@ plot.scatter.gate.v2 <- function(indata,
 } # end function def  plot.scatter.gate.v2
 
 
-
-
 plot.scatter.density<- function(indata, 
                                 inx, 
                                 iny, 
@@ -2375,10 +2418,6 @@ plot.scatter.density<- function(indata,
     print(p)
   
 } # end function def  plot.scatter.density
-
-
-
-
 
 
 plot.scatter.density.v2 <- function(indata, 
@@ -2736,7 +2775,9 @@ plot.scatter.density.v2 <- function(indata,
 
 
 
-
+#--------------------------------------
+# Batch correction
+#--------------------------------------
 
 # ............. Batch alignement percentages are globally defined and called like that within the function ......................
 # if you decide to change these, you need to adjust them inside the function as well!!
@@ -2751,7 +2792,9 @@ percentile_colors <- c('p60'='#a361c7','p80'='#5ba962','p85'='#c75a87','p90'='#a
 
 
 
-
+#--------------------------------------
+# Gating utilities
+#--------------------------------------
 
 # ............. GATTING via OUTLIER Flags 1 or active data point 0 flag: ......................
 # The advantage of flagging outliers as 1 comes from my crstallography background, where reflections NOT participating in the model calculations are flagged with 1. 
@@ -2805,12 +2848,6 @@ function.range.penalty <- function(i,j,k){
 
 
 
-
-
-
-
-
-
 # this is the function to return the values of the multisegmented line looking along y!
 
 multisegmentGATEline <- function(x.var, y.var){
@@ -2836,9 +2873,9 @@ multisegmentGATEline <- function(x.var, y.var){
 
 
 
+#--------------------------------------
 # cluster collapse functions:
-
-
+#--------------------------------------
 
 
 RMSD = function(x){
@@ -2848,8 +2885,6 @@ RMSD = function(x){
 MAE = function(x){
   1/length(x) * sum(   abs( x - mean(x) )  )
 }
-
-
 
 calc.homogeneity = function(m){
   
@@ -2873,7 +2908,6 @@ calc.homogeneity = function(m){
     
     
     
-    
     #message(paste0("Cluster ", i, " RMSD: ", round( cluster.sum,3)  ))
     
     # we calculate RMSD of every marker, then sum up and add the RMSD-cluster-sum to the RMSD-subset-sum
@@ -2893,7 +2927,10 @@ calc.homogeneity = function(m){
 sort_hclust <- function(...) as.hclust(dendsort(as.dendrogram(...)))
 
 
-# proximity index functions:
+
+#--------------------------------------
+# Spatial proximity index functions:
+#--------------------------------------
 extract.distance <- function(x=x,
                              y=y,
                              mask=mask){
@@ -2911,7 +2948,9 @@ lookup.binary.mask <- function(x=x,
 }
 
 
-
+#--------------------------------------
+# Plotting and statistics utilities
+#--------------------------------------
 # for plotting log scale, we define some major and minor breaks:
 breaks <- 10^(-10:10)
 minor_breaks <- rep(1:9, 21)*(10^rep(-10:10, each=9))
@@ -2934,7 +2973,9 @@ sigStar.verticaloffset <- 0.1
 
 
 
-
+#--------------------------------------
+# depreciated..
+#--------------------------------------
 
 make.autograph.adapted <- function (dat, x.axis, y.axis, colour.by = x.axis, y.axis.label = y.axis, 
                                     grp.order = NULL, 

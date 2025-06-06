@@ -39,6 +39,7 @@ library(ggrepel) # repelling labels in make.colour.plot
 library(scico) # just like brewer, another package to deliver color grads. We need that for the scatter plots of two variables, along with the stat_density_2d lines
 library(Polychrome) # another color palette aiming for colors maximally separated
 library(ggbeeswarm) # call quasirandom 
+library(gridExtra)
 #library(tidyverse) # use pipes to handle data.frames
 library(stringr) # use strings to process conditions. we use str_detect to pull out strings from Diet vector
 
