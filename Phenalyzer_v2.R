@@ -3486,7 +3486,7 @@ if(plot.segementation.areas == 1){
 g <- 
   ggplot(data=cell.dat, aes(x=gsub("(.{15,}?)_", "\\1\n", cell.dat$Image), y= Cell..Area.µm.2,color=as.factor(outside.area) )) + #, colour=Batch 
   
-  geom_quasirandom( size = 2 ) + #alpha=0.8
+geom_quasirandom( size = 2 ) + #alpha=0.8
  
   scale_color_manual(name = "Area outlier flag", values = c("#308441", "#F6CD7A"))+ #, 
   
@@ -8902,7 +8902,7 @@ g<- ggsave(paste0("Core_", i, "_tissue_", sample.meta[ sample.meta$TMA.core  == 
                   nrow = 5, scales="free_y"
       )+
       geom_violin(trim=T)+
-      geom_quasirandom(alpha=1,size=2) +
+  geom_quasirandom(alpha=1,size=2) +
       scale_colour_manual( values = temp.palette , limits = force  )+
       
       # significance brackets are cut off, expand axis:
@@ -9080,7 +9080,7 @@ g<- ggsave(paste0("Core_", i, "_tissue_", sample.meta[ sample.meta$TMA.core  == 
                 nrow = 5, scales="free_y"
     )+
     geom_violin(trim=T)+
-    geom_quasirandom(alpha=1,size=2) +
+geom_quasirandom(alpha=1,size=2) +
     scale_colour_manual( values = tumorStage_grouped_palette, limits = force  )+
     
     # significance brackets are cut off, expand axis:
@@ -9423,46 +9423,46 @@ g<- ggsave(paste0("Core_", i, "_tissue_", sample.meta[ sample.meta$TMA.core  == 
   ## it gets even sexier than a for loop and call the plotting engine over column element as y:
   make.violin.multiplot.v2 = function (column, legendtitle, yaxisstring, data) {
     
-    
-    ggplot( data, 
-            aes_string(x = data$Cond, 
-                       y = data[[ column ]], 
-                       colour=data$MC 
-            )
-    )+
-      facet_wrap2(.~MC, 
-                  strip = strip,
-                  labeller = labeller(source = facet.labs),
-                  nrow = 1,
-                  scales="free_y")+
-      geom_violin(trim=T)+
-      geom_quasirandom(alpha=1,size=2) +
-      scale_colour_manual( values = subset.Phenograph_metacluster_palette, limits = force  )+
-      
-      labs(title=column , 
-           #subtitle=subtitlestring, 
-           # caption=test.stat.lyrics, 
-           y=yaxisstring, 
-           x="",
-           color=legendtitle
-      )+
-      theme(panel.background = element_rect(fill = "grey90", colour = "grey55", linewidth = 0.5), # change 'colour' to black for informative axis
-            axis.title.x=element_text(color="grey15", size=11),
-            axis.title.y=element_text(color="grey15", size=11),
-            axis.text=element_text(size=8),
-            axis.text.x = element_text(angle = 45, hjust=1),
-            #legend.text=element_text(size=12), # large = 30 # small = 8 # taken out since we define that in the legend layouts just above here. 
-            legend.key.height=unit(1,"cm"), # large = 3 # small = 1.2
-            legend.key.width=unit(0.4,"cm"), # large = 1 # small = 0.4
-            #legend.title=element_blank(),
-            legend.position="right",
-            plot.title = element_text(color="Black", size=14, hjust=0), # size 70 for large, # 18 for small
-            plot.subtitle = element_text(color = "Black", size = 12, hjust = 0)
-      )
-    
-  }
+
+ggplot( data, 
+        aes_string(x = data$Cond, 
+                    y = data[[ column ]], 
+                    colour=data$MC 
+        )
+)+
+  facet_wrap2(.~MC, 
+              strip = strip,
+              labeller = labeller(source = facet.labs),
+              nrow = 1,
+              scales="free_y")+
+  geom_violin(trim=T)+
+  geom_quasirandom(alpha=1,size=2) +
+  scale_colour_manual( values = subset.Phenograph_metacluster_palette, limits = force  )+
   
-  
+  labs(title=column , 
+        #subtitle=subtitlestring, 
+        # caption=test.stat.lyrics, 
+        y=yaxisstring, 
+        x="",
+        color=legendtitle
+  )+
+  theme(panel.background = element_rect(fill = "grey90", colour = "grey55", linewidth = 0.5), # change 'colour' to black for informative axis
+        axis.title.x=element_text(color="grey15", size=11),
+        axis.title.y=element_text(color="grey15", size=11),
+        axis.text=element_text(size=8),
+        axis.text.x = element_text(angle = 45, hjust=1),
+        #legend.text=element_text(size=12), # large = 30 # small = 8 # taken out since we define that in the legend layouts just above here. 
+        legend.key.height=unit(1,"cm"), # large = 3 # small = 1.2
+        legend.key.width=unit(0.4,"cm"), # large = 1 # small = 0.4
+        #legend.title=element_blank(),
+        legend.position="right",
+        plot.title = element_text(color="Black", size=14, hjust=0), # size 70 for large, # 18 for small
+        plot.subtitle = element_text(color = "Black", size = 12, hjust = 0)
+  )
+
+}
+
+
   
   
   u <- lapply(normalizations.to.do ,make.violin.multiplot.v2, 
