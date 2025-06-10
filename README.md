@@ -118,7 +118,7 @@ Phenalyzer is a pipeline to process and analyze raw data PhenoCycler qptiff file
 
 
 ### 3.5 Install add-ons to improve R Console experience: radian
- While the following three extensions are optional, installing radian is highly recommended. Radian is a python-based frontend that turns your R code more interactive by highlighting syntax or auto-completing your commands. 
+ While the following three extensions are optional, installing [radian](https://github.com/randy3k/radian) is highly recommended. Radian is a python-based frontend that turns your R code more interactive by highlighting syntax or auto-completing your commands. 
 - **Install radian (Improved R Console):**
   - radian is installed from the bash console. Since it is a python application wrapping around the R library, pipx will take care of the installation in a minute. We need pipx first, followed by radian:
   ```bash
@@ -144,19 +144,19 @@ Phenalyzer is a pipeline to process and analyze raw data PhenoCycler qptiff file
 - Open the VS Code Settings and search for `r.plot.useHttpgd` and enable it. All plots will now pop up in the same panel.
 
 ### 3.7 Install add-ons to improve R Console experience: Linting (lintr)
-  - `lintr` is a R package, so you need to initialize an R console. We install the newest version from GitHub, for that we need a second package `remotes` that is pulling  `lintr`. Both packages will go into the user directory as before: `/home/maba/R/x86_64-pc-linux-gnu-library/4.5`
+  - `lintr` is a R package, so you need to initialize an R console. We pull the newest version of `lintr` from GitHub using a second package called `remotes`. Both packages will go into the user directory as before: `/home/maba/R/x86_64-pc-linux-gnu-library/4.5`
   ```r
   install.packages("remotes")
   remotes::install_github("r-lib/lintr")
   ```
 
-- Lintr is a good way to write code correctly. However I found lintr to be too strict, so I toned linter down. To customize lintr, we create a starup file that disables a couple of linter settings. This file is created in your homes directory. We use the bash terminal for this:
+- [Lintr](https://github.com/r-lib/lintr) is a good way to write code correctly. However I found lintr to be too strict, so I toned lintr down. To customize lintr, we create a starup file that disables a couple of lintr settings. This file is created in your homes directory. We use the bash terminal for this:
   - In bash:
     ```bash
     cd ~
     vi ./lintr
     ```
-  - This is an empty text file. Paste the following lines. Watch out, linter is *very fussy* about this file: Ensure the closing bracket is on the last line of the last command and there is a blank line at the end. Make sure you hit enter to create that last line:
+  - This is an empty text file. Paste the following lines. Watch out, lintr is *very fussy* about this file: Ensure the closing bracket is on the last line of the last command and there is a blank line at the end. Make sure you hit enter to create that last line:
     ```r
     linters: with_defaults(
       line_length_linter = NULL,
@@ -166,10 +166,10 @@ Phenalyzer is a pipeline to process and analyze raw data PhenoCycler qptiff file
 
     ```
   - To store the file, press `Esc`, type `:wq` to save and exit.
-  - Restart VS Code. If the terminal has notable delay and does not respond to your commands, the chances are high that the `./lintr` file is wrongly formated.
+  - Restart VS Code. If the terminal has notable delay and does not respond to commands you send from the console, chances are high that `./lintr`  is wrongly formatted.
 
 ## 4. Install Phenalyzer Dependencies
-- cmake is required to install a multitude of R packages (such as `s2, stars, nloptr, FlowSOM`). We will install cmake from the bash terminal, not R! In bash, type:
+- `cmake` is required to install a multitude of R packages (such as `s2, stars, nloptr, FlowSOM`). We will install `cmake` from the bash terminal, not R:
 - **Install cmake for package dependencies:**
   ```bash
   sudo apt install cmake

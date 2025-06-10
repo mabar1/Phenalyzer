@@ -233,7 +233,7 @@ if(rebuild.cell.data.anew == 1){
 # if we rebuild anew, the input directory is the QuPath_tsv_inputs folder
 #--------------------------------------
 setwd(PrimaryDirectory)
-setwd(paste0("QuPath_tsv_inputs/")) # we hop into Data right way: in here are all tsv we will load
+setwd(paste0("QuPath_tsv_inputs/")) # all tsv files will load
 InputDirectory <- getwd()
 InputDirectory
 
@@ -299,7 +299,10 @@ PCF_data %>%
 
 # ...and then can check if all markers are present in the data:
 if(length(Markers2Process) != length(cellular.cols)){
-  cat(paste0("\n\n\n----------------------------------- \n ERROR in STAGE0 start-up   \n Not all markers to process further were found in your data \n  Check your Markers2Process vector and make sure it matches the marker spelling \n -> Seems you misspelled ",length(Markers2Process)-length(cellular.cols)," of the following entries? \n")) 
+  cat(paste0("\n\n\n----------------------------------- \n ERROR in STAGE0 start-up   \n 
+  Not all markers to process further were found in your data \n  
+  Check your Markers2Process vector and make sure it matches the marker spelling \n 
+  -> Seems you misspelled ",length(Markers2Process)-length(cellular.cols)," of the following entries? \n")) 
   temp.string <- names(
   PCF_data %>%
     dplyr::select(
@@ -337,36 +340,40 @@ if(length(Markers2Process) != length(cellular.cols)){
 
 
 #--------------------------------------
-# Clear up PCF_data before proceeding
-# the qupath code to run CellPose is heavily adapted
-# so measurement export from qupath needs clean up:
+# Tidy up PCF_data before proceeding
 #--------------------------------------
+# the groovy script that runs CellPose in QuPath is heavily adapted
+# consequently, the column names in tsv files need clean up:
 
-# 1) due to assembling the cells manually, TMA.column is empty,
-# Instaad, it was added after cell assembly into Names colum
+# 1) due to assembling the cell cytoplasm and nucleus manually, 
+# TMA.column is empty and TMA info added into "Name" colum
 # fix that:
 PCF_data <- PCF_data %>%
   dplyr::select(-TMA.core) %>%
   dplyr::rename(TMA.core= Name)
 
-# 2) when assembling the cells, we also added non-nucleated cells
-# if you do NOT do a object classification in QuPath, 
-# Classification column is populated with exactly this information:
-# "nucleated profile" and "anucleated profile". 
-# if you DO classify the object, these tags are overwritten with your classes.
-# but dont worry, we bring the nucleation status back by checking the intensities of Cytoplasm:
-# anucleated profiles have nuc and cyto the same polygon, so Cytoplasm becomes NA in these cells:
+# 2) while assembling the cells, we also added non-nucleated cell profiles
+# if you did NOT do a object classification in QuPath, 
+# "Classification" column is still populated with
+# this information: "nucleated profile" and "anucleated profile". 
+# if you DO classify the object, these tags were overwritten by the Object Classifier of QuPath.
+# but dont worry, we bring back the nucleation status by checking the intensities of Cytoplasm:
+# anucleated profiles are composed of nuc and cyto being the same polygon
+# so when shape analyis ran, the Cytoplasm reads became NA in these cells
+# we take advantage of this fact and create a new column called "Object.cross.section":
 
 # Check and process the Classification column in PCF_data
 if ("Classification" %in% names(PCF_data)) {
   unique_vals <- unique(na.omit(PCF_data$Classification))
   allowed_vals <- c("nucleated profile", "anucleated profile")
   if (all(unique_vals %in% allowed_vals) && length(unique_vals) <= 2) {
-    # No classification ran, profile annotations are correct:
+    # No Object classification ran, profile annotations are conserved 
+    # only the column has wrong name:
     PCF_data <- PCF_data %>%
       dplyr::rename(Object.cross.section = Classification)
   } else {
-    # Other values present, create Object.cross.section based on ..Cytoplasm.. columns
+    # Other values present because Object Classifier ran.
+    # create Object.cross.section based on ..Cytoplasm.. columns
     cytoplasm_cols <-  grep(paste0(qupath.separator,"Cytoplasm",qupath.separator)   , names(PCF_data), value = TRUE)
     PCF_data$Object.cross.section <- ifelse(
       apply(PCF_data[, cytoplasm_cols, drop = FALSE], 1, function(row) any(is.na(row))), #dataframe
@@ -377,11 +384,12 @@ if ("Classification" %in% names(PCF_data)) {
 }
 
 
-# 3) CellPose or the assembly creates a bunch of ghost cells without any readouts. 
+# 3) Something in the groovy script, or the export itself creates a bunch of ghost cells without any reads
 # these cells carry a centroid and Object.type Cell, they are assigned to TMA.cores,
-# carry clasisfication, but are marker values filled only with NA values.
-# we remove segmentation artifacts that have no readouts in the cellular.cols
+# I checked the CEntroid.X.µm and Centroid.Y.µm of a couple of these cells, none of them is drawn in QuPath 
+# They even carry Clasisfication, but their marker values are filled with NA values.
 #cells_with_all_na <- PCF_data[apply(PCF_data[, ..cellular.cols], 1, function(row) all(is.na(row))), ]
+# we remove them if all markers to process are NA:
 cells_with_all_na <- PCF_data[apply(PCF_data[, cellular.cols, drop = FALSE], 1, function(row) all(is.na(row))), ]
 
 if (ncol(cells_with_all_na) > 0) {
@@ -393,6 +401,7 @@ PCF_data <- PCF_data[!apply(PCF_data[, cellular.cols], 1, function(row) all(is.n
 }
 rm(cells_with_all_na)
 
+
 #--------------------------------------
 # Mapping Metadata to the cellular data
 #--------------------------------------
@@ -402,12 +411,17 @@ if(any(is.na(PCF_data$TMA.core))){
   message("TMA.core column in PCF_data has NA values")
   message("-> Assuming there was no TMA present and mapping metadata by tsv file names:")
 
-  # remove the TMA.core column from sample.meta. We got this column already in PCFdata and would not be able to map 
+  # remove the TMA.core column from sample.meta. 
+  #We got this column already in PCFdata and would not be able to map 
   #if more than one column name are shared among the two files:
   sample.meta <- sample.meta %>% dplyr::select(-TMA.core)
 
   #ready to map meta into df
-  PCF_data <- do.add.cols(as.data.frame(PCF_data), base.col = 'tsv.file', add.dat = sample.meta, add.by = 'tsv.file.name')
+  PCF_data <- do.add.cols(as.data.frame(PCF_data), 
+    base.col = 'tsv.file', 
+    add.dat = sample.meta, 
+    add.by = 'tsv.file.name'
+  )
   message("Mapping metadata to the cellular data complete")
 
 }else {
@@ -423,35 +437,34 @@ if(any(is.na(PCF_data$TMA.core))){
   # in sample.meta, lets make sure the TMA.core column comes properly formatted.
   # we need A-1, not A1 oder A.1 or whatsoever.
 
-  if( "TMA.core" %in% names(sample.meta) ){
-  # Regular expression to match a single letter, a hyphen, and another letter
-  if( all(  grepl("^[A-Za-z]-[0-9]$", sample.meta$TMA.core)) ){
-    # all good, prepare th column to map:
-    sample.meta$TMA.ID_core <- paste(sample.meta$tsv.file.name,sample.meta$TMA.core, sep="_")
-    # remove the TMA.core column from sample.meta for upcoming mapping:
-    sample.meta <- sample.meta %>% dplyr::select(-TMA.core)
-    #ready to map meta into df
-    PCF_data <- do.add.cols(as.data.frame(PCF_data), base.col = 'TMA.ID_core', add.dat = sample.meta, add.by = 'TMA.ID_core')
-    message("Mapping metadata to the cellular data complete")
-  }else{
+  if ("TMA.core" %in% names(sample.meta)) {
+    # Regular expression to match a single letter, a hyphen, and another letter
+    if (all(grepl("^[A-Za-z]-[0-9]$", sample.meta$TMA.core))) {
+      # all good, prepare the column to map:
+      sample.meta$TMA.ID_core <- paste(sample.meta$tsv.file.name, sample.meta$TMA.core, sep = "_")
+      # remove the TMA.core column from sample.meta for upcoming mapping:
+      sample.meta <- sample.meta %>% dplyr::select(-TMA.core)
+      # ready to map meta into df
+      PCF_data <- do.add.cols(as.data.frame(PCF_data), base.col = 'TMA.ID_core', add.dat = sample.meta, add.by = 'TMA.ID_core')
+      message("Mapping metadata to the cellular data complete")
+    } else {
       # lets attempt to fix TMA.core column, maybe the column is in A1 format:
-      sample.meta$TMA.core <-  gsub("([A-Za-z]+)([0-9]+)", "\\1-\\2", sample.meta$TMA.core)
+      sample.meta$TMA.core <- gsub("([A-Za-z]+)([0-9]+)", "\\1-\\2", sample.meta$TMA.core)
       # Regular expression to match a single letter, a hyphen, and another letter
-        if( all(  grepl("^[A-Za-z]-[0-9]$", sample.meta$TMA.core)) ){
+      if (all(grepl("^[A-Za-z]-[0-9]$", sample.meta$TMA.core))) {
         # fixing worked. proceed with mapping:
-        # prepare th column to map:
-        sample.meta$TMA.ID_core <- paste(sample.meta$tsv.file.name,sample.meta$TMA.core, sep="_")
+        # prepare the column to map:
+        sample.meta$TMA.ID_core <- paste(sample.meta$tsv.file.name, sample.meta$TMA.core, sep = "_")
         sample.meta <- sample.meta %>% dplyr::select(-TMA.core)
-        PCF_data <- do.add.cols(as.data.frame(PCFdPCF_dataata), base.col = 'TMA.ID_core', add.dat = sample.meta, add.by = 'TMA.ID_core')
+        PCF_data <- do.add.cols(as.data.frame(PCF_data), base.col = 'TMA.ID_core', add.dat = sample.meta, add.by = 'TMA.ID_core')
         message("Fixed the TMA.core format. Mapping metadata to the cellular data complete")
-        }
       }
-    }else{
+    }
+  } else {
     message("Mapping metadata failed. Make sure your metadata contains TMA.core and tsv.file.name matches the file names in the QuPath_tsv_inputs folder.")
     stop()
-      }
-
-} # end mapping: PCF_data$TMA.core was there.
+  }
+  # end mapping: PCF_data$TMA.core was there.
 
 # now that we mapped batch numbers, we could clear entire cores:
 #e.g. PCF_data <- PCF_data[ grep("20250228_27X_bleaching trial (control).tsv_B-2",  PCF_data$TMA.ID_core, invert = TRUE) , ]
@@ -485,13 +498,14 @@ list2env( initialize_stage_0_variables(
 ###### Start spill-over correction routine ######         
 if(correct.spill.over ==1){
           
-# Watch out! This routine will be executed exactly one time! 
-cell.dat <- do.spill.over.corr(dat = cell.dat,
-                               spillover.matrix.path = spillover.matrix.path,
-                               donor.col.name = "acq.chnl" # the first column name with the donor isotopes
-                               )
-}        
-        
+  # Watch out! This routine will be executed exactly one time!
+    cell.dat <- do.spill.over.corr(
+    dat = cell.dat,
+    spillover.matrix.path = spillover.matrix.path,
+    donor.col.name = "acq.chnl" # the first column name with the donor isotopes
+  )
+}
+          
 
 # STAGE 0 needs to be run several times if you want batch normalization.
 # in the first run we just aim to connect metadata as to find the permanent column numbers needed to define cellular.cols in the end
@@ -503,960 +517,675 @@ if(how.often.ran.STAGE0>0) {
         
                 
         
-###### Start batch normalization routine ######      
-if(calculate.scaling.factors==1){
+  ###### Start batch normalization routine ######      
+  if(calculate.scaling.factors==1){
 
-  
-  batchnormalize.marker <- batch.normalization.matrix[seq(1,length(batch.normalization.matrix),2)]
-  batchnormalize.percentile <- as.numeric(batch.normalization.matrix[seq(2,length(batch.normalization.matrix),2) ])
-  
-  set.seed(723451) # for reproducibility
-  percentile_palette <- createPalette(length(batch.aligning.percentiles), c("#1BC912"), M=100000, prefix = "")
-  names(percentile_palette) <- batch.aligning.percentiles   
-  
-  
-    
-  
-# Compared to Lev, we hop into exploration and normalization automatically.
-# how.often.ran.STAGE0 is now either 1 or 2
-  
-  if(  how.often.ran.STAGE0==1 ) { 
-    # we need to ignore the percentiles in batch.normalization.matrix
-    
-message("Batch normalization routine started: collecting percentiles of markers to align the signals...")
-    
-  
-  
-  # if we run batch normalization, we need more packages:
-  library(flowCore)
-  library(cowplot)
-  library(ggridges)
-  
-  library(DescTools) # call the function "Closest" for scaling  
+    batchnormalize.marker <- batch.normalization.matrix[seq(1,length(batch.normalization.matrix),2)]
+    batchnormalize.percentile <- as.numeric(batch.normalization.matrix[seq(2,length(batch.normalization.matrix),2) ])
 
-  quantiles_table_long <- data.frame()
-  
-  
-  
-setwd(OutputDirectory)
-dir.create('Batch_Normalization')
-setwd('Batch_Normalization') 
-  
-# in order to track the histogram lines from within ggplot, we need to assign unique colors pre-assigned to each batch:
-set.seed(723451) # for reproducibility
-Batches_palette <- createPalette(amount.of.TMAs, c("#0000ff"), M=100000, prefix = "")
-names(Batches_palette) <- all_images  
+    set.seed(723451) # for reproducibility
+    percentile_palette <- createPalette(length(batch.aligning.percentiles), c("#1BC912"), M=100000, prefix = "")
+    names(percentile_palette) <- batch.aligning.percentiles   
 
-# its easier to just subset a pos. ctr. dataset out now:  
-spleen.data.frame <- subset(cell.dat, Tissue %in% postive.control.Tissue.name )  
+    # Compared to Lev, we hop into exploration and normalization automatically.
+    # how.often.ran.STAGE0 is now either 1 or 2
 
-# we silently do the transformation for the spleen as well,
-# but we brutally override whatever normalization was chosen:
-spleen.data.frame <-  do.data.normalization(dat=spleen.data.frame, 
-                                            use.cols=cellular.cols, 
-                                            # Transform
-                                            do.transform = transform.rawdata,
-                                            cofactor = asinh.cofactor,
-                                            # min-max normalize?
-                                            do.minmax = FALSE, # minmax.norm,
-                                            new.min = min.norm, 
-                                            new.max = max.norm,
-                                            # z-score normalize?
-                                            do.zscore = FALSE #zscore.norm
-) 
+    if(  how.often.ran.STAGE0==1 ) { 
+      # we need to ignore the percentiles in batch.normalization.matrix
+      message("Batch normalization routine started: collecting percentiles of markers to align the signals...")
+      # if we run batch normalization, we need more packages:
+      library(flowCore)
+      library(cowplot)
+      library(ggridges)
+      library(DescTools) # call the function "Closest" for scaling  
 
+      quantiles_table_long <- data.frame()
 
-# from here on, if we plot, we need the asinh transformed columns:
-# which are pasted like this in the function: paste0(names(value), "_t",cofactor)
+      setwd(OutputDirectory)
+      dir.create('Batch_Normalization')
+      setwd('Batch_Normalization') 
 
-batchnormalize.marker.transformed <- paste0(batchnormalize.marker, "_t",asinh.cofactor)
+      # in order to track the histogram lines from within ggplot, we need to assign unique colors pre-assigned to each batch:
+      set.seed(723451) # for reproducibility
+      Batches_palette <- createPalette(amount.of.TMAs, c("#0000ff"), M=100000, prefix = "")
+      names(Batches_palette) <- all_images  
 
+      # its easier to just subset a pos. ctr. dataset out now:  
+      spleen.data.frame <- subset(cell.dat, Tissue %in% postive.control.Tissue.name )  
 
-
-
-
-
-# pushing the percentiles into a separate df or list is a cute idea, but the ggplot engine wont work like that:
-# ggplot wants the transformed data and the percentile values in the same df, and that plotting takes ages
-
-pb <- progress_bar$new(format = "[:bar] :percent [Collecting Percentiles | :eta]",
-                       total = amount.of.TMAs*length(batchnormalize.marker.transformed), #
-                       show_after=0, #allows to call it right way 
-                       current = "|",    # Current bar character
-                       clear = FALSE) # make it persist
-pb$tick(0) # call in the progress bar without any progress, just to show it
-
-
-    # We push the percentiles into two datasets:
-    for (batch in all_images ){
-   
-    #1: make an own percentile df that we use to pull out the values when calculating the scaling factors in a second run through:
-    # this here is calculating the percentiles of all channels of the current TMA, while......
-    temp.df <- as.data.frame( 
-      cbind( 
-        sapply(  subset(  spleen.data.frame, Batch==batch, select=batchnormalize.marker.transformed) , 
-                 function(x) quantile(x, probs=batch.aligning.percentiles )  ) , 
-        Percentile=batch.aligning.percentiles,
-        Batch=batch 
+      # we silently do the transformation for the spleen as well,
+      # but we brutally override whatever normalization was chosen:
+      spleen.data.frame <- do.data.normalization(
+        dat = spleen.data.frame,
+        use.cols = cellular.cols,
+        # Transform
+        do.transform = transform.rawdata,
+        cofactor = asinh.cofactor,
+        # min-max normalize?
+        do.minmax = FALSE, # minmax.norm,
+        new.min = min.norm,
+        new.max = max.norm,
+        # z-score normalize?
+        do.zscore = FALSE #zscore.norm
       )
-    )
- 
-    # and then bind this baby to the 
-    quantiles_table_long <- rbind(quantiles_table_long, temp.df )
-    
-    
-    for (channel in batchnormalize.marker.transformed){
-    
-      
-      # ......this here subsets into batch and channel. We need this second percentile calculation (not as list, but as stupid vector) for the ggplot routine:
-      
-      temp.signal <- as.vector(subset(spleen.data.frame, Batch==batch, select=channel))
-      
-      temp.percentiles <-  sapply( temp.signal , 
-                                   function(x) quantile(x, probs=batch.aligning.percentiles )  ) 
-      
-      
-      # 2: push the percentiles into the raw data for the upcoming plotting routine:
-      spleen.data.frame$p60[spleen.data.frame$Batch==batch] <- temp.percentiles[1]
-      spleen.data.frame$p80[spleen.data.frame$Batch==batch] <- temp.percentiles[2]
-      spleen.data.frame$p85[spleen.data.frame$Batch==batch] <- temp.percentiles[3]
-      spleen.data.frame$p90[spleen.data.frame$Batch==batch] <- temp.percentiles[4]
-      spleen.data.frame$p95[spleen.data.frame$Batch==batch] <- temp.percentiles[5]
-      spleen.data.frame$p99[spleen.data.frame$Batch==batch] <- temp.percentiles[6]
-    
-   # pb$tick()
-    
-    
 
-      
-      
-      pb$tick()
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-  }# end run along all channels and fill up the spleen.data.frame with the according percentiles
-  }# end run along all batches to calculated percentiles of current channel
-  
-  
+      # from here on, if we plot, we need the asinh transformed columns:
+      # which are pasted like this in the function: paste0(names(value), "_t",cofactor)
 
+      batchnormalize.marker.transformed <- paste0(batchnormalize.marker, "_t",asinh.cofactor)
 
+      # pushing the percentiles into a separate df or list is a cute idea, but the ggplot engine wont work like that:
+      # ggplot wants the transformed data and the percentile values in the same df, and that plotting takes ages
 
-# now that everything is stored in the raw data dataframe, now we plot, thats faster, I thinK:
-message("Plotting collected percentiles on all batches...")
+      pb <- progress_bar$new(format = "[:bar] :percent [Collecting Percentiles | :eta]",
+        total = amount.of.TMAs*length(batchnormalize.marker.transformed), #
+        show_after=0, #allows to call it right way 
+        current = "|",    # Current bar character
+        clear = FALSE) # make it persist
+      pb$tick(0) # call in the progress bar without any progress, just to show it
 
-pb <- progress_bar$new(format = "[:bar] :percent [Plotting unscaled | :eta]",
-                       total = length(batchnormalize.marker.transformed), #
-                       show_after=0, #allows to call it right way 
-                       current = "|",    # Current bar character
-                       clear = FALSE) # make it persist
-pb$tick(0) # call in the progress bar without any progress, just to show it
+      # We push the percentiles into two datasets:
+      for (batch in all_images ){
 
-#https://stackoverflow.com/questions/71555598/can-geom-vline-be-connected-across-facet-grid
+        #1: make an own percentile df that we use to pull out the values when calculating the scaling factors in a second run through:
+        # this here is calculating the percentiles of all channels of the current TMA, while......
+        temp.df <- as.data.frame( 
+          cbind( 
+            sapply(  subset(  spleen.data.frame, Batch==batch, select=batchnormalize.marker.transformed) , 
+              function(x) quantile(x, probs=batch.aligning.percentiles )  ) , 
+            Percentile=batch.aligning.percentiles,
+            Batch=batch 
+          )
+        )
 
-for (channel in batchnormalize.marker.transformed){
-  
-  # we first create a tibble that is split by batch, the same we use for the facet. this allows to split the percentiles batch-wise later on: 
-  percentiles.tibble.facetplottin <- spleen.data.frame %>%
-    group_by(Batch) %>%
-    summarize(p60 = unique(p60),
-              p80 = unique(p80),
-              p85 = unique(p85),
-              p90 = unique(p90),
-              p95 = unique(p95),
-              p99 = unique(p99)
-              )
-  
+        # and then bind this baby to the 
+        quantiles_table_long <- rbind(quantiles_table_long, temp.df )
 
-  
-  png(filename=paste0( sub("_.*", "", channel ),"_t",asinh.cofactor,"_0_unscaled.png"), width = 1600, height=length(unique(spleen.data.frame$Batch))*100)
-  suppressMessages(
-    print(  
-  ggplot(spleen.data.frame  , aes( x= spleen.data.frame[[channel]] )  ) +
-    facet_grid(Batch ~ . , scales = "free_y", switch = "y")+ # this brings the facet tag to the left
-    
- 
-    
-    geom_area( alpha = 0.15 ,   color = 'black', fill = 'grey',
-              stat = "bin",
-               binwidth = function(x) 2 * IQR(x) / (length(x)^(1/3)), 
-             size = 0.5    )+
-    
-    #scale_color_manual(values = scico(amount.of.TMAs, begin = 0.12, palette = "roma"))+
-    #scale_fill_manual(values = scico(amount.of.TMAs, begin = 0.12, palette = "roma"))+
-    
-    
-   # geom_vline(data=percentiles.tibble.facetplottin, aes(xintercept = p60), colour = "#a361c7"   ) +
-  #  geom_vline(data=percentiles.tibble.facetplottin, aes(xintercept = p80), colour = "#5ba962"   ) +
-  #  geom_vline(data=percentiles.tibble.facetplottin, aes(xintercept = p85), colour = "#c75a87"   ) +
-  #  geom_vline(data=percentiles.tibble.facetplottin, aes(xintercept = p90), colour = "#ab973d"   ) +
-  #  geom_vline(data=percentiles.tibble.facetplottin, aes(xintercept = p95), colour = "#648ace"   ) +
-  #  geom_vline(data=percentiles.tibble.facetplottin, aes(xintercept = p99), colour = "#cb6342"   )+
-    
-    geom_vline(data=percentiles.tibble.facetplottin, aes(xintercept = p60), colour = percentile_palette["0.6"]   ) +
-    geom_vline(data=percentiles.tibble.facetplottin, aes(xintercept = p80), colour = percentile_palette["0.8"]   ) +
-    geom_vline(data=percentiles.tibble.facetplottin, aes(xintercept = p85), colour = percentile_palette["0.85"]   ) +
-    geom_vline(data=percentiles.tibble.facetplottin, aes(xintercept = p90), colour = percentile_palette["0.9"]   ) +
-    geom_vline(data=percentiles.tibble.facetplottin, aes(xintercept = p95), colour = percentile_palette["0.95"]   ) +
-    geom_vline(data=percentiles.tibble.facetplottin, aes(xintercept = p99), colour = percentile_palette["0.99"]   )+
-    
-   # geom_point(data=percentiles.tibble.facetplottin, mapping=aes(x=p60, y=0, group = 1), colour = "#a361c7"   ) +
-    #geom_point(data=percentiles.tibble.facetplottin, mapping=aes(x=p80, y=0, group = 1), colour = "#5ba962"   ) +
-    #geom_point(data=percentiles.tibble.facetplottin, mapping=aes(x=p85, y=0, group = 1), colour = "#c75a87"   ) +
-    #geom_point(data=percentiles.tibble.facetplottin, mapping=aes(x=p90, y=0, group = 1), colour = "#ab973d"   ) +
-    #geom_point(data=percentiles.tibble.facetplottin, mapping=aes(x=p95, y=0, group = 1), colour = "#648ace"   ) +
-    #geom_point(data=percentiles.tibble.facetplottin, mapping=aes(x=p99, y=0, group = 1), color= "#cb6342" )+
-    
-    geom_point(data=percentiles.tibble.facetplottin, mapping=aes(x=p60, y=0, group = 1), colour = percentile_palette["0.6"]   ) +
-    geom_point(data=percentiles.tibble.facetplottin, mapping=aes(x=p80, y=0, group = 1), colour = percentile_palette["0.8"]   ) +
-    geom_point(data=percentiles.tibble.facetplottin, mapping=aes(x=p85, y=0, group = 1), colour = percentile_palette["0.85"]   ) +
-    geom_point(data=percentiles.tibble.facetplottin, mapping=aes(x=p90, y=0, group = 1), colour = percentile_palette["0.9"]   ) +
-    geom_point(data=percentiles.tibble.facetplottin, mapping=aes(x=p95, y=0, group = 1), colour = percentile_palette["0.95"]   ) +
-    geom_point(data=percentiles.tibble.facetplottin, mapping=aes(x=p99, y=0, group = 1), color= percentile_palette["0.99"] )+
-    
+        for (channel in batchnormalize.marker.transformed){
 
-    
-    theme_minimal() +
-    theme(axis.title.y = element_blank(), #take "count" away
-          #these are the facet settings:
-      strip.text.x = element_text(size=25,  face="bold"),
-      strip.background = element_rect(colour="black", fill="grey90", size=1, linetype="solid"),
-      strip.text.y.left = element_text(angle = 0), # and once the tag is on the left, keep it horizontal
-      
-      panel.border=element_blank(), 
-      axis.line=element_line(), # turn off the x-axis line on the bottom of the facet
-      
-          axis.title.x = element_text(size=20),
-          axis.text.x = element_text(size=20),
-          axis.text.y = element_text(size=10),
-          
-          panel.spacing = unit(1.2, "lines"),
-      
-     
-    )+
-    
-    xlab(as.character(channel))
-#    .............
-    )
-  )
-  invisible(dev.off())
-  
-  
-  
-  pb$tick()
-}# end run along all channels and plot ridges
+          # ......this here subsets into batch and channel. We need this second percentile calculation (not as list, but as stupid vector) for the ggplot routine:
 
-  
+          temp.signal <- as.vector(subset(spleen.data.frame, Batch==batch, select=channel))
 
+          temp.percentiles <-  sapply( temp.signal , 
+            function(x) quantile(x, probs=batch.aligning.percentiles )  ) 
 
+          # 2: push the percentiles into the raw data for the upcoming plotting routine:
+          spleen.data.frame$p60[spleen.data.frame$Batch==batch] <- temp.percentiles[1]
+          spleen.data.frame$p80[spleen.data.frame$Batch==batch] <- temp.percentiles[2]
+          spleen.data.frame$p85[spleen.data.frame$Batch==batch] <- temp.percentiles[3]
+          spleen.data.frame$p90[spleen.data.frame$Batch==batch] <- temp.percentiles[4]
+          spleen.data.frame$p95[spleen.data.frame$Batch==batch] <- temp.percentiles[5]
+          spleen.data.frame$p99[spleen.data.frame$Batch==batch] <- temp.percentiles[6]
 
+          pb$tick()
 
+        }# end run along all channels and fill up the spleen.data.frame with the according percentiles
+      }# end run along all batches to calculated percentiles of current channel
 
+      # now that everything is stored in the raw data dataframe, now we plot, thats faster, I thinK:
+      message("Plotting collected percentiles on all batches...")
 
+      pb <- progress_bar$new(format = "[:bar] :percent [Plotting unscaled | :eta]",
+        total = length(batchnormalize.marker.transformed), #
+        show_after=0, #allows to call it right way 
+        current = "|",    # Current bar character
+        clear = FALSE) # make it persist
+      pb$tick(0) # call in the progress bar without any progress, just to show it
 
+      #https://stackoverflow.com/questions/71555598/can-geom-vline-be-connected-across-facet-grid
 
-# end second time pass STAGE0: Percentiles were ignored check which percentiles to align 
- 
- # to switch to final STAGE0 setup, we do not use how.often.ran.STAGE0==2 but force the script into that setting without any chance of getting out
-  }else if(  how.often.ran.STAGE0>1 ) {
-# begin second pass: use the provided percentiles given in batch.normalization.matrix to calculate scaling factors:
-    setwd(OutputDirectory)
-    setwd('Batch_Normalization')    
-    
-    
-# watch out, make sure the last column of batchnormalize.percentile is actually filled with numbers:
-    if(any(is.na(batchnormalize.percentile )) == F ){
-    
-message("Batch normalization routine continued: percentiles found, calculating scaling factors...")  
+      for (channel in batchnormalize.marker.transformed){
 
-scaled.cell.dat <- cell.dat
+        # we first create a tibble that is split by batch, the same we use for the facet. this allows to split the percentiles batch-wise later on: 
+        percentiles.tibble.facetplottin <- spleen.data.frame %>%
+          group_by(Batch) %>%
+          summarize(p60 = unique(p60),
+            p80 = unique(p80),
+            p85 = unique(p85),
+            p90 = unique(p90),
+            p95 = unique(p95),
+            p99 = unique(p99)
+          )
 
-scaled.spleen.data.frame <- subset(cell.dat, Tissue %in% postive.control.Tissue.name )  # this didnt do much yet. we gonna push scaled "_SF" cols in here and transform
-scaled.spleen.data.frame <-  do.data.normalization(dat=scaled.spleen.data.frame, 
-                                            use.cols=cellular.cols, 
-                                            # Transform
-                                            do.transform = transform.rawdata,
-                                            cofactor = asinh.cofactor,
-                                            # min-max normalize?
-                                            do.minmax = FALSE, # minmax.norm,
-                                            new.min = min.norm, 
-                                            new.max = max.norm,
-                                            # z-score normalize?
-                                            do.zscore = FALSE #zscore.norm
-) 
+        png(filename=paste0( sub("_.*", "", channel ),"_t",asinh.cofactor,"_0_unscaled.png"), width = 1600, height=length(unique(spleen.data.frame$Batch))*100)
+        suppressMessages(
+          print(  
+            ggplot(spleen.data.frame  , aes( x= spleen.data.frame[[channel]] )  ) +
+              facet_grid(Batch ~ . , scales = "free_y", switch = "y")+ # this brings the facet tag to the left
+              geom_area( alpha = 0.15 ,   color = 'black', fill = 'grey',
+                stat = "bin",
+                binwidth = function(x) 2 * IQR(x) / (length(x)^(1/3)), 
+                size = 0.5    )+
+              #scale_color_manual(values = scico(amount.of.TMAs, begin = 0.12, palette = "roma"))+
+              #scale_fill_manual(values = scico(amount.of.TMAs, begin = 0.12, palette = "roma"))+
+              # geom_vline(data=percentiles.tibble.facetplottin, aes(xintercept = p60), colour = "#a361c7"   ) +
+              #  geom_vline(data=percentiles.tibble.facetplottin, aes(xintercept = p80), colour = "#5ba962"   ) +
+              #  geom_vline(data=percentiles.tibble.facetplottin, aes(xintercept = p85), colour = "#c75a87"   ) +
+              #  geom_vline(data=percentiles.tibble.facetplottin, aes(xintercept = p90), colour = "#ab973d"   ) +
+              #  geom_vline(data=percentiles.tibble.facetplottin, aes(xintercept = p95), colour = "#648ace"   ) +
+              #  geom_vline(data=percentiles.tibble.facetplottin, aes(xintercept = p99), colour = "#cb6342"   )+
+              geom_vline(data=percentiles.tibble.facetplottin, aes(xintercept = p60), colour = percentile_palette["0.6"]   ) +
+              geom_vline(data=percentiles.tibble.facetplottin, aes(xintercept = p80), colour = percentile_palette["0.8"]   ) +
+              geom_vline(data=percentiles.tibble.facetplottin, aes(xintercept = p85), colour = percentile_palette["0.85"]   ) +
+              geom_vline(data=percentiles.tibble.facetplottin, aes(xintercept = p90), colour = percentile_palette["0.9"]   ) +
+              geom_vline(data=percentiles.tibble.facetplottin, aes(xintercept = p95), colour = percentile_palette["0.95"]   ) +
+              geom_vline(data=percentiles.tibble.facetplottin, aes(xintercept = p99), colour = percentile_palette["0.99"]   )+
+              #geom_point(data=percentiles.tibble.facetplottin, mapping=aes(x=p60, y=0, group = 1), colour = "#a361c7"   ) +
+              #geom_point(data=percentiles.tibble.facetplottin, mapping=aes(x=p80, y=0, group = 1), colour = "#5ba962"   ) +
+              #geom_point(data=percentiles.tibble.facetplottin, mapping=aes(x=p85, y=0, group = 1), colour = "#c75a87"   ) +
+              #geom_point(data=percentiles.tibble.facetplottin, mapping=aes(x=p90, y=0, group = 1), colour = "#ab973d"   ) +
+              #geom_point(data=percentiles.tibble.facetplottin, mapping=aes(x=p95, y=0, group = 1), colour = "#648ace"   ) +
+              #geom_point(data=percentiles.tibble.facetplottin, mapping=aes(x=p99, y=0, group = 1), color= "#cb6342" )+
+              geom_point(data=percentiles.tibble.facetplottin, mapping=aes(x=p60, y=0, group = 1), colour = percentile_palette["0.6"]   ) +
+              geom_point(data=percentiles.tibble.facetplottin, mapping=aes(x=p80, y=0, group = 1), colour = percentile_palette["0.8"]   ) +
+              geom_point(data=percentiles.tibble.facetplottin, mapping=aes(x=p85, y=0, group = 1), colour = percentile_palette["0.85"]   ) +
+              geom_point(data=percentiles.tibble.facetplottin, mapping=aes(x=p90, y=0, group = 1), colour = percentile_palette["0.9"]   ) +
+              geom_point(data=percentiles.tibble.facetplottin, mapping=aes(x=p95, y=0, group = 1), colour = percentile_palette["0.95"]   ) +
+              geom_point(data=percentiles.tibble.facetplottin, mapping=aes(x=p99, y=0, group = 1), color= percentile_palette["0.99"] )+
+              theme_minimal() +
+              theme(axis.title.y = element_blank(), #take "count" away
+                #these are the facet settings:
+                strip.text.x = element_text(size=25,  face="bold"),
+                strip.background = element_rect(colour="black", fill="grey90", size=1, linetype="solid"),
+                strip.text.y.left = element_text(angle = 0), # and once the tag is on the left, keep it horizontal
+                panel.border=element_blank(), 
+                axis.line=element_line(), # turn off the x-axis line on the bottom of the facet
+                axis.title.x = element_text(size=20),
+                axis.text.x = element_text(size=20),
+                axis.text.y = element_text(size=10),
+                panel.spacing = unit(1.2, "lines")   
+              )+
+              xlab(as.character(channel))
+          )#end print
+        )
+        invisible(dev.off())
+        pb$tick()
+      }# end run along all channels and plot ridges
 
+      # end second time pass STAGE0: Percentiles were ignored check which percentiles to align 
+      # to switch to final STAGE0 setup, we do not use how.often.ran.STAGE0==2 but force the script into that setting without any chance of getting out
+    } else if(  how.often.ran.STAGE0>1 ) {
+      # begin second pass: use the provided percentiles given in batch.normalization.matrix to calculate scaling factors:
+      setwd(OutputDirectory)
+      setwd('Batch_Normalization')    
 
-# the trick is that quantiles_table_long was rbound running through "batch in all_images". 
-# therefore, if we pull out temp.quantile.values in the upcoming loop, these values have the same order as all_images
-# so there is no need to cbind the batches everytime we build up the scaling.factor dataframe: the scaling factors follow the same order as in all_images:
-scaling.factors <- data.frame( Batch.ID = all_images   )
+      # watch out, make sure the last column of batchnormalize.percentile is actually filled with numbers:
+      if(any(is.na(batchnormalize.percentile )) == F ){
 
+        message("Batch normalization routine continued: percentiles found, calculating scaling factors...")  
 
+        scaled.cell.dat <- cell.dat
 
+        scaled.spleen.data.frame <- subset(cell.dat, Tissue %in% postive.control.Tissue.name )  # this didnt do much yet. we gonna push scaled "_SF" cols in here and transform
+        scaled.spleen.data.frame <- do.data.normalization(
+          dat = scaled.spleen.data.frame,
+          use.cols = cellular.cols,
+          # Transform
+          do.transform = transform.rawdata,
+          cofactor = asinh.cofactor,
+          # min-max normalize?
+          do.minmax = FALSE, # minmax.norm,
+          new.min = min.norm,
+          new.max = max.norm,
+          # z-score normalize?
+          do.zscore = FALSE #zscore.norm
+        )
 
-# so we got percentiles set, lets see them. instead of running througth the names, lets run through the position of both vectors:
-    
-# lets run through the markers again and calculate the SF, given the percentile we find in the matrix (or rather, the batchnormalize.percentile vector derived from that matrix )
+        # the trick is that quantiles_table_long was rbound running through "batch in all_images". 
+        # therefore, if we pull out temp.quantile.values in the upcoming loop, these values have the same order as all_images
+        # so there is no need to cbind the batches everytime we build up the scaling.factor dataframe: the scaling factors follow the same order as in all_images:
+        scaling.factors <- data.frame( Batch.ID = all_images   )
 
-  for(m in c(1:length(batchnormalize.percentile ))){ 
-    
-  #  batchnormalize.marker[m]  # watch out, thats raw signal, this is not part of  quantiles_table_long
-  #  batchnormalize.marker.transformed[m]  # thats the one you wanna work on first for the SF
-  #  batchnormalize.percentile[m] 
-    
-    
-   
- # its important that we pull the TRANSFORMED Data here! We will calculate the SF on these data, but scale then the linear data!
- # temp.quantile.values <- deframe( subset(quantiles_tibble_long, Percentile==batchnormalize.percentile[m]  )[,batchnormalize.marker.transformed[m]]   )
-  temp.quantile.values <- as.numeric( subset(quantiles_table_long, Percentile==batchnormalize.percentile[m]  )[,batchnormalize.marker.transformed[m] ] )  
-  
-  
-  
-  # find the closest value to the mean of all percentiles
-  #https://stackoverflow.com/questions/43472234/fastest-way-to-find-nearest-value-in-vector
-  anchor <- as.vector( Closest(x = temp.quantile.values, a = mean(temp.quantile.values)     ) )
-  
-  # Somesh warned me that if one has only two OTs to align, anchor will have two objects now and we gonna crash the script in the upcoming scaling.
-  # so lets just make sure we pull the smaller of both values:
-  anchor <- sort(anchor)[1]
-  
-  # match this anchor value to the OT nth memeber in temp.qunantiles (we do not )
-  #match( anchor,  temp.quantile.values   )
-    
-    
-  message( paste0("Scaling ", batchnormalize.marker[m], 
-                  " @ ", 100*batchnormalize.percentile[m], "th percentile: Closest to percentile-mean: ",  
-                  subset(quantiles_table_long, Percentile==batchnormalize.percentile[m]  )$Batch[ match( anchor,  temp.quantile.values   ) ])      )   
-    
-    # now we just use the quantiles of the transformed signals from above to calculate the scale factors:
-    # rather than storing them all in separate df, we create a temporal one and then....
-  temp.SF.values <- data.frame(
-    #Batch = subset(quantiles_tibble_long, Percentile==batchnormalize.percentile[m]  )$Batch,
-    Batch = subset(quantiles_table_long, Percentile %in% batchnormalize.percentile[m]  )$Batch, # this is equivalent with all_images, but I wanna be sure the order is the same
-    SF = rep(anchor, length(temp.quantile.values)) /temp.quantile.values 
-    #    ^ this rep() here is stupid, but without we would run into a "shorter vector is not a multiple of longer vector" warning which I hate to see in the console
-    
-  ) 
-  
-  # batch order and SF.values is always the same. I cross-checked that but see the comment when scaling.factors is initialized
-  scaling.factors[, paste0( batchnormalize.marker[m] )] <- temp.SF.values[,2]
-  
-  
-  # ...and then use classic dirty R to push a new column into the spleen.data.frame right away
-  # we use the long spleen.data.frame$Batch vector to match every according SF in the temp.SF.values in one go, and use that scaling to create a new columN:
-  
-  temp.scaled.rawsignal <- spleen.data.frame[[ batchnormalize.marker[m] ]] * temp.SF.values[ match(spleen.data.frame$Batch, temp.SF.values$Batch   ) ,  ]$SF
+        # so we got percentiles set, lets see them. instead of running througth the names, lets run through the position of both vectors:
 
-  scaled.spleen.data.frame[, paste0( batchnormalize.marker[m], "_SF" )] <- temp.scaled.rawsignal
-  
-  
-#  WATCH OUT 
-# !!!! we are about to use the same column names like our raw data has!!!!  
-# as of v10, we do the scaling on a copy of cell.dat: scaled.cell.dat,
-# and we override the original raw data and push the scaled data into these columns!
-#  this has the advantage that we can feed that object to downstream engines (gating and plotting mostly) without the need to change their input column name structure
+        # lets run through the markers again and calculate the SF, given the percentile we find in the matrix (or rather, the batchnormalize.percentile vector derived from that matrix )
 
-# this time with use the million-cell long scaled.cell.dat$Batch vector to match the SF present in temp.SF.values:
-temp.scaled.rawsignal <- scaled.cell.dat[[ batchnormalize.marker[m] ]] * temp.SF.values[ match(scaled.cell.dat$Batch, temp.SF.values$Batch   ) ,  ]$SF
-scaled.cell.dat[, batchnormalize.marker[m] ] <- temp.scaled.rawsignal
-  
-  
+        for(m in c(1:length(batchnormalize.percentile ))){ 
 
- # quantiles_tibble_long <- as_tibble(quantiles_table_long) %>% type_convert()
- # filter(test, Percentile  == 0.95) 
-  
-  
- #library(tidyverse)
-  
-  #filter(quantiles_tibble_long, Percentile  == 0.95)
-  
-  #test %>% filter(test, Percentile  == 0.95)
-  
-  
-  
-  #quantiles_tibble_long %>% 
-  #  filter(`Percentile`  = 0.95)
-    
-    
+          #  batchnormalize.marker[m]  # watch out, thats raw signal, this is not part of  quantiles_table_long
+          #  batchnormalize.marker.transformed[m]  # thats the one you wanna work on first for the SF
+          #  batchnormalize.percentile[m] 
 
+          # its important that we pull the TRANSFORMED Data here! We will calculate the SF on these data, but scale then the linear data!
+          # temp.quantile.values <- deframe( subset(quantiles_tibble_long, Percentile==batchnormalize.percentile[m]  )[,batchnormalize.marker.transformed[m]]   )
+          temp.quantile.values <- as.numeric( subset(quantiles_table_long, Percentile==batchnormalize.percentile[m]  )[,batchnormalize.marker.transformed[m] ] )  
 
-    
-  
-} # end running with m along all set percentiles and markers
-    
-   
-    
-# after we scaled the raw data at the given percentiles, we will transform anew:
-# but this time we transform only the scaled: the ones that did not go into scaling are already present as transformed cols!
-    
-#paste0(batchnormalize.marker, "_SF")
+          # find the closest value to the mean of all percentiles
+          #https://stackoverflow.com/questions/43472234/fastest-way-to-find-nearest-value-in-vector
+          anchor <- as.vector( Closest(x = temp.quantile.values, a = mean(temp.quantile.values)     ) )
 
+          # Somesh warned me that if one has only two OTs to align, anchor will have two objects now and we gonna crash the script in the upcoming scaling.
+          # so lets just make sure we pull the smaller of both values:
+          anchor <- sort(anchor)[1]
 
-# again, we block any min-max or zscale setting manually:
-scaled.spleen.data.frame <-  do.data.normalization(dat=scaled.spleen.data.frame, 
-                                                use.cols=paste0(batchnormalize.marker, "_SF"), 
-                                                # Transform
-                                                do.transform = transform.rawdata,
-                                                cofactor = asinh.cofactor,
-                                                # min-max normalize?
-                                                do.minmax = FALSE, # minmax.norm,
-                                                new.min = min.norm, 
-                                                new.max = max.norm,
-                                                # z-score normalize?
-                                                do.zscore = FALSE #zscore.norm
-    ) 
-    
-    
-    
-    # And memorize which ones did not go into the scaling routine  
-    # we set the difference based on the raw signal names, so we have to paste the processed tags in both cases: 
-# scaled columns get a _SF, the ones left out get their transformed tag back on:
-scaled.cellular.cols <- c( paste0(batchnormalize.marker, "_SF", "_t",asinh.cofactor) , paste0(setdiff(cellular.cols,batchnormalize.marker), "_t",asinh.cofactor) )       
-    
-    
-# and plot with the selected percentile:
-message("Plotting all scaled batches...")
-    pb <- progress_bar$new(format = "[:bar] :percent [Plotting scaled | :eta]",
-                           total = length(scaled.cellular.cols), #
-                           show_after=0, #allows to call it right way 
-                           current = "|",    # Current bar character
-                           clear = FALSE) # make it persist
-    pb$tick(0) # call in the progress bar without any progress, just to show it
-    
-    
-    for (channel in scaled.cellular.cols){   
-      
-      png(filename=paste0( sub("_.*", "", channel ),"_t",asinh.cofactor,"_1_scaled.png"), width = 1600, height=length(unique(spleen.data.frame$Batch))*100)
-      suppressMessages(
-        print(  
-          ggplot(scaled.spleen.data.frame  , aes( x= scaled.spleen.data.frame[[channel]] )  ) +
-            facet_grid(Batch ~ . , scales = "free_y", switch = "y")+ # this brings the facet tag to the left
-            
-            
-            
-            geom_area( alpha = 0.15 ,   color = 'black', fill = 'grey',
-                       stat = "bin",
-                       binwidth = function(x) 2 * IQR(x) / (length(x)^(1/3)), 
-                       size = 0.5    )+
-      
-          
-          
-          theme_minimal() +
-            theme(axis.title.y = element_blank(), #take "count" away
+          # match this anchor value to the OT nth memeber in temp.qunantiles (we do not )
+          #match( anchor,  temp.quantile.values   )
+
+          message( paste0("Scaling ", batchnormalize.marker[m], 
+            " @ ", 100*batchnormalize.percentile[m], "th percentile: Closest to percentile-mean: ",  
+            subset(quantiles_table_long, Percentile==batchnormalize.percentile[m]  )$Batch[ match( anchor,  temp.quantile.values   ) ])      )   
+
+          # now we just use the quantiles of the transformed signals from above to calculate the scale factors:
+          # rather than storing them all in separate df, we create a temporal one and then....
+          temp.SF.values <- data.frame(
+            #Batch = subset(quantiles_tibble_long, Percentile==batchnormalize.percentile[m]  )$Batch,
+            Batch = subset(quantiles_table_long, Percentile %in% batchnormalize.percentile[m]  )$Batch, # this is equivalent with all_images, but I wanna be sure the order is the same
+            SF = rep(anchor, length(temp.quantile.values)) /temp.quantile.values 
+            #    ^ this rep() here is stupid, but without we would run into a "shorter vector is not a multiple of longer vector" warning which I hate to see in the console
+          ) 
+
+          # batch order and SF.values is always the same. I cross-checked that but see the comment when scaling.factors is initialized
+          scaling.factors[, paste0( batchnormalize.marker[m] )] <- temp.SF.values[,2]
+
+          # ...and then use classic dirty R to push a new column into the spleen.data.frame right away
+          # we use the long spleen.data.frame$Batch vector to match every according SF in the temp.SF.values in one go, and use that scaling to create a new columN:
+
+          temp.scaled.rawsignal <- spleen.data.frame[[ batchnormalize.marker[m] ]] * temp.SF.values[ match(spleen.data.frame$Batch, temp.SF.values$Batch   ) ,  ]$SF
+
+          scaled.spleen.data.frame[, paste0( batchnormalize.marker[m], "_SF" )] <- temp.scaled.rawsignal
+
+          #  WATCH OUT 
+          # !!!! we are about to use the same column names like our raw data has!!!!  
+          # as of v10, we do the scaling on a copy of cell.dat: scaled.cell.dat,
+          # and we override the original raw data and push the scaled data into these columns!
+          #  this has the advantage that we can feed that object to downstream engines (gating and plotting mostly) without the need to change their input column name structure
+
+          # this time with use the million-cell long scaled.cell.dat$Batch vector to match the SF present in temp.SF.values:
+          temp.scaled.rawsignal <- scaled.cell.dat[[ batchnormalize.marker[m] ]] * temp.SF.values[ match(scaled.cell.dat$Batch, temp.SF.values$Batch   ) ,  ]$SF
+          scaled.cell.dat[, batchnormalize.marker[m] ] <- temp.scaled.rawsignal
+
+          # quantiles_tibble_long <- as_tibble(quantiles_table_long) %>% type_convert()
+          # filter(test, Percentile  == 0.95) 
+
+          #library(tidyverse)
+
+          #filter(quantiles_tibble_long, Percentile  == 0.95)
+
+          #test %>% filter(test, Percentile  == 0.95)
+
+          #quantiles_tibble_long %>% 
+          #  filter(`Percentile`  = 0.95)
+
+        } # end running with m along all set percentiles and markers
+
+        # again, we block any min-max or zscale setting manually:
+        scaled.spleen.data.frame <- do.data.normalization(
+          dat = scaled.spleen.data.frame,
+          use.cols = paste0(batchnormalize.marker, "_SF"),
+          # Transform
+          do.transform = transform.rawdata,
+          cofactor = asinh.cofactor,
+          # min-max normalize?
+          do.minmax = FALSE, # minmax.norm,
+          new.min = min.norm,
+          new.max = max.norm,
+          # z-score normalize?
+          do.zscore = FALSE #zscore.norm
+        )
+
+        # And memorize which ones did not go into the scaling routine  
+        # we set the difference based on the raw signal names, so we have to paste the processed tags in both cases: 
+        # scaled columns get a _SF, the ones left out get their transformed tag back on:
+        scaled.cellular.cols <- c( paste0(batchnormalize.marker, "_SF", "_t",asinh.cofactor) , paste0(setdiff(cellular.cols,batchnormalize.marker), "_t",asinh.cofactor) )       
+
+        # and plot with the selected percentile:
+        message("Plotting all scaled batches...")
+        pb <- progress_bar$new(format = "[:bar] :percent [Plotting scaled | :eta]",
+          total = length(scaled.cellular.cols), #
+          show_after=0, #allows to call it right way 
+          current = "|",    # Current bar character
+          clear = FALSE) # make it persist
+        pb$tick(0) # call in the progress bar without any progress, just to show it
+
+        for (channel in scaled.cellular.cols){   
+
+          png(filename=paste0( sub("_.*", "", channel ),"_t",asinh.cofactor,"_1_scaled.png"), width = 1600, height=length(unique(spleen.data.frame$Batch))*100)
+          suppressMessages(
+            print(  
+              ggplot(scaled.spleen.data.frame  , aes( x= scaled.spleen.data.frame[[channel]] )  ) +
+                facet_grid(Batch ~ . , scales = "free_y", switch = "y")+ # this brings the facet tag to the left
+                geom_area( alpha = 0.15 ,   color = 'black', fill = 'grey',
+                  stat = "bin",
+                  binwidth = function(x) 2 * IQR(x) / (length(x)^(1/3)), 
+                  size = 0.5    )+
+                theme_minimal() +
+                theme(axis.title.y = element_blank(), #take "count" away
                   #these are the facet settings:
                   strip.text.x = element_text(size=15,  face="bold"),
                   strip.background = element_rect(colour="black", fill="grey90", size=1, linetype="solid"),
                   strip.text.y.left = element_text(angle = 0), # and once the tag is on the left, keep it horizontal
-                  
                   panel.border=element_blank(), 
                   axis.line=element_line(), # turn off the x-axis line on the bottom of the facet
-                  
                   axis.title.x = element_text(size=20),
                   axis.text.x = element_text(size=20),
                   axis.text.y = element_text(size=10),
-                  
-                  panel.spacing = unit(1.2, "lines"),
-                  
-                  
-            )+
-            
-            xlab(as.character(channel))
-          #    .............
-        )
+                  panel.spacing = unit(1.2, "lines")
+                )+
+                xlab(as.character(channel))
+              #    .............
+            )#end print
+          )
+          invisible(dev.off())
+          pb$tick()  
+        }# end run along all channels and plot ridges of scaled data
+
+        # let us store away scaled.cell.dat
+        setwd(OutputDataDirectory)
+        qsave(scaled.cell.dat, "scaled.cell.dat.qs")
+      }else{#protect from batch normalizing if at least one marker percentile is not defined NA stop("Transformation/Normalization engine stopped")  
+        cat("\n\n\n----------------------------------- \n ERROR in STAGE 0 third run.   \n At least one channel has undefined percentiles to normalize on \n  1) Check your batch.normalization.matrix \n -> Re-run STAGE 0 to apply batch norm. \n-----------------------------------\n\n")# stop(), call. = FALSE)  
+        stop()
+      }
+    }# end second pass bracket: percentiles are given in batch.normalization.matrix 
+
+    #protect from running Levs code that is in adaptation
+    if(run.experimental.code==1){
+
+      # set up a tibble where we store all max values of every marker we will normalize
+      spleen.normalization <- tibble(marker=character(), 
+        batch=character(), 
+        max.signal=numeric()
       )
-      invisible(dev.off())
-      
-      pb$tick()  
-      
-    
-    }# end run along all channels and plot ridges of scaled data
-    
 
-  
-    # let us store away scaled.cell.dat
-    
-    setwd(OutputDataDirectory)
-    qsave(scaled.cell.dat, "scaled.cell.dat.qs")
-   }else{#protect from batch normalizing if at least one marker percentile is not defined NA stop("Transformation/Normalization engine stopped")  
-     cat("\n\n\n----------------------------------- \n ERROR in STAGE 0 third run.   \n At least one channel has undefined percentiles to normalize on \n  1) Check your batch.normalization.matrix \n -> Re-run STAGE 0 to apply batch norm. \n-----------------------------------\n\n")# stop(), call. = FALSE)  
-     stop()
-     }
-  }# end second pass bracket: percentiles are given in batch.normalization.matrix 
+      pb <- progress_bar$new(total = amount.of.TMAs,
+        show_after=0, #allows to call it right way 
+        clear = FALSE) # make it persist
+      pb$tick(0) # call in the progress bar without any progress, just to show it
 
+      # for (channel in batchnormalize.marker){
+      for (batch in all_images ){
 
+        # quantiles.list[[list.pos]] <-   t(   sapply(  subset(  spleen.data.frame, Batch==batch, select=batchnormalize.marker) , 
+        #                                          function(x) quantile(x, probs=batch.correct.percentile )  )
+        #      )
 
+        temp.df <- as.data.frame( 
+          cbind( 
+            sapply(  subset(  spleen.data.frame, Batch==batch, select=batchnormalize.marker.transformed) , 
+              function(x) quantile(x, probs=batch.correct.percentile )  ) , 
+            Percentile=batch.correct.percentile,
+            Batch=batch 
+          )
+        )
 
+        # and then bind this baby to the 
+        quantiles_table_long <- rbind(quantiles_table_long, temp.df )
 
+        # list.pos <- list.pos+1
+        pb$tick()
+      }
 
+      # names(quantiles.list) <- all_images 
 
+      # now some tibble:
+      quantiles.df.long <- dplyr::bind_rows(quantiles.list, .id = 'id')
 
+      # now quick and dirty, cbind the list and add a batch name column:
+      quantiles.df.long <-  do.call(rbind, quantiles.list) 
+      quantiles.df.long <- cbind(quantiles.df.long, Batch= seq(1: (amount.of.TMAs* length(batchnormalize.marker)) )  ) 
 
+      quantiles.df.long <- cbind(quantiles.df.long,  rep(all_images, each= length(batchnormalize.marker) ) )
 
+      library(purrr)
+      map_df(quantiles.list, .id="id")
 
+      do.call(rbind, quantiles.list)
+      unsplit(quantiles.list, quantiles.list$Batch)
 
+      dplyr::bind_rows(quantiles.list, .id = 'id')
 
+      data.table::rbindlist(quantiles.list, idcol = 'id')
+      dplyr::bind_rows(unname(quantiles.list), .id = 'id')
 
-
-
-
-
-
-#protect from running Levs code that is in adaptation
-if(run.experimental.code==1){
-  
-    
-# set up a tibble where we store all max values of every marker we will normalize
-spleen.normalization <- tibble(marker=character(), 
-                               batch=character(), 
-                               max.signal=numeric()
-)
-
-  
-  
-  
-  pb <- progress_bar$new(total = amount.of.TMAs,
-                         show_after=0, #allows to call it right way 
-                         clear = FALSE) # make it persist
-  pb$tick(0) # call in the progress bar without any progress, just to show it
-  
- # for (channel in batchnormalize.marker){
-
-    for (batch in all_images ){
-    
-#      quantiles.list[[list.pos]] <-   t(   sapply(  subset(  spleen.data.frame, Batch==batch, select=batchnormalize.marker) , 
-#                                          function(x) quantile(x, probs=batch.correct.percentile )  )
-#      )
-      
-      
-     temp.df <- as.data.frame( 
-                cbind( 
-                  sapply(  subset(  spleen.data.frame, Batch==batch, select=batchnormalize.marker.transformed) , 
-                             function(x) quantile(x, probs=batch.correct.percentile )  ) , 
-                  Percentile=batch.correct.percentile,
-                  Batch=batch 
-                  )
-     )
-      
-     
-     # and then bind this baby to the 
-     quantiles_table_long <- rbind(quantiles_table_long, temp.df )
-      
-      
-    
-      
- #     list.pos <- list.pos+1
-      pb$tick()
-    }
-  
-  
- # names(quantiles.list) <- all_images 
-  
-
-  
-  
- 
-  
-  
-  
-  
-  
-  
-  
-  # now some tibble:
-  
-  quantiles.df.long <- dplyr::bind_rows(quantiles.list, .id = 'id')
-  
-  
-  # now quick and dirty, cbind the list and add a batch name column:
-  quantiles.df.long <-  do.call(rbind, quantiles.list) 
-  quantiles.df.long <- cbind(quantiles.df.long, Batch= seq(1: (amount.of.TMAs* length(batchnormalize.marker)) )  ) 
-
-  
-  quantiles.df.long <- cbind(quantiles.df.long,  rep(all_images, each= length(batchnormalize.marker) ) )
-  
-  
-  
-    
-  library(purrr)
-  map_df(quantiles.list, .id="id")
-  
-  
-
-    
-    do.call(rbind, quantiles.list)
-    unsplit(quantiles.list, quantiles.list$Batch)
-    
-    dplyr::bind_rows(quantiles.list, .id = 'id')
-    
-    data.table::rbindlist(quantiles.list, idcol = 'id')
-    dplyr::bind_rows(unname(quantiles.list), .id = 'id')
-    
-    
-    
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  ggplot(spleen.data.frame, aes(x=spleen.data.frame[[m]], y=spleen.data.frame[,Batch]))+
-    geom_density_ridges(fill='grey', scale = 1, alpha = 0.4, quantile_lines = T, quantiles = c(0.6, 0.8, 0.85, 0.90, 0.95, 0.99))+
-    theme_cowplot()+
-    theme(axis.title.x = element_text(size=35),
+      ggplot(spleen.data.frame, aes(x=spleen.data.frame[[m]], y=spleen.data.frame[,Batch]))+
+        geom_density_ridges(fill='grey', scale = 1, alpha = 0.4, quantile_lines = T, quantiles = c(0.6, 0.8, 0.85, 0.90, 0.95, 0.99))+
+        theme_cowplot()+
+        theme(axis.title.x = element_text(size=35),
           axis.text.x = element_text(size=30),
           axis.text.y = element_text(size=20)
-    )+
-    xlab(as.character(m))
-  
-  
+        )+
+        xlab(as.character(m))
 
+      # set up lyrics and progress bar for the GAM modelling:
 
+      message( paste0("Starting batch normalization of ", length(batchnormalize.marker), " markers on ", amount.of.batches, " TMAs" )  )
+      pb <- progress_bar$new(total = length(batchnormalize.marker)*amount.of.batches,
+        show_after=0, #allows to call it right way 
+        clear = FALSE) # make it persist
+      pb$tick(0) # call in the progress bar without any progress, just to show it
 
+      for(m in batchnormalize.marker ){
 
-# set up lyrics and progress bar for the GAM modelling:
+        # we make the pretty plot first and then do the work:
+        #g <-
+        ggplot(spleen.data.frame  , aes( x= spleen.data.frame[[m]] , fill = Batch , color = Batch )  ) +
+          facet_grid(Batch ~ . , scales = "free_y")+ theme(panel.border=element_blank(), axis.line=element_line())+
+          geom_area( alpha = 0.15 ,
+            stat = "bin",
+            binwidth = function(x) 2 * IQR(x) / (length(x)^(1/3)), 
+            size = 0.5    )+
+          scale_color_manual(values = scico(amount.of.TMAs, begin = 0.12, palette = "roma"))+
+          scale_fill_manual(values = scico(amount.of.TMAs, begin = 0.12, palette = "roma"))+
+          # scale_x_log10(breaks = trans_breaks("log10", function(x) 10^x),  labels = trans_format("log10", math_format(10^.x))) +
+          # annotation_logticks(sides="b")   +
+          theme_classic()+
+          labs(title= paste0(sub("_.*", "", m ), " signal drift over all batches"  )    , 
+            subtitle= paste0("Using ", nrow(spleen.data.frame), " cells of all spleen ROIs.") ,
+            #caption="Created by M.Barone", 
+            y="Amount of cells in bin", 
+            x= sub("_.*", "", m )  
+          )+
+          theme(panel.background = element_rect(fill = "grey93", colour = "grey55", size = 0.5), # change 'colour' to black for informative axis
+            axis.title.x=element_text(color="grey15", size=11),
+            axis.title.y=element_text(color="grey15", size=11),
+            axis.text=element_text(size=10),
+            #legend.text=element_text(size=12), # large = 30 # small = 8 # taken out since we define that in the legend layouts just above here. 
+            legend.key.height=unit(1,"cm"), # large = 3 # small = 1.2
+            legend.key.width=unit(0.4,"cm"), # large = 1 # small = 0.4
+            #legend.title=element_blank(),
+            plot.title = element_text(color="Black", size=14, hjust=0), # size 70 for large, # 18 for small
+            plot.subtitle = element_text(color = "Black", size = 12, hjust = 0)
+          )
 
-message( paste0("Starting batch normalization of ", length(batchnormalize.marker), " markers on ", amount.of.batches, " TMAs" )  )
-pb <- progress_bar$new(total = length(batchnormalize.marker)*amount.of.batches,
-                       show_after=0, #allows to call it right way 
-                       clear = FALSE) # make it persist
-pb$tick(0) # call in the progress bar without any progress, just to show it
+        filename <- paste0("SPLEEN_RawSignalDrift_byCondition_", sub("_.*", "", m ) , ".png")
+        ggsave(filename,g, width = 30, height = 20, units = "cm",dpi = 1200)
 
-for(m in batchnormalize.marker ){
-  
-  # we make the pretty plot first and then do the work:
-  #g <-
-    ggplot(spleen.data.frame  , aes( x= spleen.data.frame[[m]] , fill = Batch , color = Batch )  ) +
-   
-    facet_grid(Batch ~ . , scales = "free_y")+ theme(panel.border=element_blank(), axis.line=element_line())+
-    geom_area( alpha = 0.15 ,
-               stat = "bin",
-               binwidth = function(x) 2 * IQR(x) / (length(x)^(1/3)), 
-               size = 0.5    )+
-    
-        scale_color_manual(values = scico(amount.of.TMAs, begin = 0.12, palette = "roma"))+
-        scale_fill_manual(values = scico(amount.of.TMAs, begin = 0.12, palette = "roma"))+
+        # now we gonna do the same, but this time we supply the unique colors to the histogram plotting engine: Batches_palette 
+        # this looks terrible, but we can then track back the batch name via color code:
+        g <-ggplot(spleen.data.frame  , aes( x= spleen.data.frame[[m]] , fill = Batch , color = Batch )  ) +
+          geom_area( alpha = 0.15 ,
+            stat = "bin",
+            binwidth = function(x) 2 * IQR(x) / (length(x)^(1/3)), 
+            size = 0.5    )+
+          #    # scico::scale_fill_scico(palette = "roma", direction=-1)+ # bilbao
+          #    scale_color_manual(values = scico(amount.of.TMAs, begin = 0.12, palette = "roma"))+
+          #    scale_fill_manual(values = scico(amount.of.TMAs, begin = 0.12, palette = "roma"))+
+          #    #facet_wrap(~Batch, scales = "free_y")+
+          scale_color_manual(values = Batches_palette)+
+          scale_fill_manual(values = Batches_palette)+  
+          scale_x_log10(breaks = trans_breaks("log10", function(x) 10^x),  labels = trans_format("log10", math_format(10^.x))) +
+          # scale_y_log10(breaks = trans_breaks("log10", function(x) 10^x),         labels = trans_format("log10", math_format(10^.x))) +
+          annotation_logticks(sides="b")   +
+          theme_classic()+
+          labs(title= paste0(sub("_.*", "", m ), " signal drift over all batches"  )    , 
+            subtitle= paste0("Using ", nrow(spleen.data.frame), " cells of all spleen ROIs.") ,
+            #caption="Created by M.Barone", 
+            y="Amount of cells in bin", 
+            x= sub("_.*", "", m )  
+          )+
+          theme(panel.background = element_rect(fill = "grey93", colour = "grey55", size = 0.5), # change 'colour' to black for informative axis
+            axis.title.x=element_text(color="grey15", size=11),
+            axis.title.y=element_text(color="grey15", size=11),
+            axis.text=element_text(size=10),
+            #legend.text=element_text(size=12), # large = 30 # small = 8 # taken out since we define that in the legend layouts just above here. 
+            legend.key.height=unit(1,"cm"), # large = 3 # small = 1.2
+            legend.key.width=unit(0.4,"cm"), # large = 1 # small = 0.4
+            #legend.title=element_blank(),
+            plot.title = element_text(color="Black", size=14, hjust=0), # size 70 for large, # 18 for small
+            plot.subtitle = element_text(color = "Black", size = 12, hjust = 0)
+          )
 
-  
-    
-   # scale_x_log10(breaks = trans_breaks("log10", function(x) 10^x),  labels = trans_format("log10", math_format(10^.x))) +
-   # annotation_logticks(sides="b")   +
-    
-    theme_classic()+
-    
-    labs(title= paste0(sub("_.*", "", m ), " signal drift over all batches"  )    , 
-         subtitle= paste0("Using ", nrow(spleen.data.frame), " cells of all spleen ROIs.") ,
-         #caption="Created by M.Barone", 
-         y="Amount of cells in bin", 
-         x= sub("_.*", "", m )  
-    )+
-    
-    theme(panel.background = element_rect(fill = "grey93", colour = "grey55", size = 0.5), # change 'colour' to black for informative axis
-          axis.title.x=element_text(color="grey15", size=11),
-          axis.title.y=element_text(color="grey15", size=11),
-          axis.text=element_text(size=10),
-          #legend.text=element_text(size=12), # large = 30 # small = 8 # taken out since we define that in the legend layouts just above here. 
-          legend.key.height=unit(1,"cm"), # large = 3 # small = 1.2
-          legend.key.width=unit(0.4,"cm"), # large = 1 # small = 0.4
-          #legend.title=element_blank(),
-          plot.title = element_text(color="Black", size=14, hjust=0), # size 70 for large, # 18 for small
-          plot.subtitle = element_text(color = "Black", size = 12, hjust = 0)
-    )
-  
+        # using the unique colors is not worth plotting, it looks ugly
 
-  filename <- paste0("SPLEEN_RawSignalDrift_byCondition_", sub("_.*", "", m ) , ".png")
-  ggsave(filename,g, width = 30, height = 20, units = "cm",dpi = 1200)
-  
-  
-  
-  
-# now we gonna do the same, but this time we supply the unique colors to the histogram plotting engine: Batches_palette 
-# this looks terrible, but we can then track back the batch name via color code:
-  g <-ggplot(spleen.data.frame  , aes( x= spleen.data.frame[[m]] , fill = Batch , color = Batch )  ) +
-    
-    geom_area( alpha = 0.15 ,
-               stat = "bin",
-               binwidth = function(x) 2 * IQR(x) / (length(x)^(1/3)), 
-               size = 0.5    )+
-    
-    #    # scico::scale_fill_scico(palette = "roma", direction=-1)+ # bilbao
-    #    scale_color_manual(values = scico(amount.of.TMAs, begin = 0.12, palette = "roma"))+
-    #    scale_fill_manual(values = scico(amount.of.TMAs, begin = 0.12, palette = "roma"))+
-    #    #facet_wrap(~Batch, scales = "free_y")+
-    
-    scale_color_manual(values = Batches_palette)+
-    scale_fill_manual(values = Batches_palette)+  
-    
-    
-    scale_x_log10(breaks = trans_breaks("log10", function(x) 10^x),  labels = trans_format("log10", math_format(10^.x))) +
-    # scale_y_log10(breaks = trans_breaks("log10", function(x) 10^x),         labels = trans_format("log10", math_format(10^.x))) +
-    annotation_logticks(sides="b")   +
-    
-    theme_classic()+
-    
-    labs(title= paste0(sub("_.*", "", m ), " signal drift over all batches"  )    , 
-         subtitle= paste0("Using ", nrow(spleen.data.frame), " cells of all spleen ROIs.") ,
-         #caption="Created by M.Barone", 
-         y="Amount of cells in bin", 
-         x= sub("_.*", "", m )  
-    )+
-    
-    theme(panel.background = element_rect(fill = "grey93", colour = "grey55", size = 0.5), # change 'colour' to black for informative axis
-          axis.title.x=element_text(color="grey15", size=11),
-          axis.title.y=element_text(color="grey15", size=11),
-          axis.text=element_text(size=10),
-          #legend.text=element_text(size=12), # large = 30 # small = 8 # taken out since we define that in the legend layouts just above here. 
-          legend.key.height=unit(1,"cm"), # large = 3 # small = 1.2
-          legend.key.width=unit(0.4,"cm"), # large = 1 # small = 0.4
-          #legend.title=element_blank(),
-          plot.title = element_text(color="Black", size=14, hjust=0), # size 70 for large, # 18 for small
-          plot.subtitle = element_text(color = "Black", size = 12, hjust = 0)
-    )
-  
-  # using the unique colors is not worth plotting, it looks ugly
+        # extract the histogram lines from ggplot engine:
+        histograms <-  ggplot_build(g)$data[[1]]
 
- # extract the histogram lines from ggplot engine:
- histograms <-  ggplot_build(g)$data[[1]]
-  
-  #the extract of ggplot has only the assigned colors in, so we need to supply that object with TMA names
- histograms <- cbind(histograms, Batch = names(Batches_palette)[match(histograms$colour,Batches_palette)] )
-  
+        #the extract of ggplot has only the assigned colors in, so we need to supply that object with TMA names
+        histograms <- cbind(histograms, Batch = names(Batches_palette)[match(histograms$colour,Batches_palette)] )
 
-  
-  
-  # for the current marker, we will do the fitting TMA by TMA.
- # there is a multiple GAM option, but I do it the slow way to store each variable away in the tibble:
-  for(t in all_images){
-    
-    oneOThistograms <- subset(histograms, Batch %in% t)
-    
-    # ggplot(oneOThistograms  , aes( x= x , y = ncount)  ) +  geom_line( )
-    
-    #lets create a fit with gam
-    k.start <- seq(65, 5, by = -10)
-    
-    for(k in k.start){
-    
-    model <- try(gam(
-      ncount~
-        # s(x),
-        s(x, bs = "gp",  k=k), #  tp, gp gaussian 4 modes  bs = "gp",
-      data=oneOThistograms,
-      method = "ML" # REML
-    ), silent = TRUE )
-    
-    #now the trick is to run GAM with many modes and decrease k until the fit works. 
-    #then the following condition is met and we break out of the GAM model
-    if (is.character(model) == FALSE) break 
-    
-    }
-    
-     plot_smooths(     model = model, series = x )
-    
-    
-    
-    pred <- predict.gam(model,se.fit=TRUE)
-    uniquepred <-unique(pred$fit)
-    uniquepred.SE <-unique(pred$se.fit)
-    
-    oneOThistograms <- cbind(oneOThistograms,pred=as.numeric(uniquepred) ) 
-    oneOThistograms <- cbind(oneOThistograms,pred.SE=as.numeric(uniquepred.SE) )
-    
-    # and return the x value of the max, and drop all info into 
-    
-    #oneOThistograms[which.max(oneOThistograms$pred),]$x
-    
-    
-    
-    spleen.normalization <- spleen.normalization %>% add_row(
-      marker = m,
-      batch = t,
-      max.signal = 10^oneOThistograms[which.max(oneOThistograms$pred),]$x
-    )
-    
-    
-    
-    
-    diff(sign(diff(oneOThistograms$pred)))==-2
-    
-    sign(diff(oneOThistograms$pred))
-    
-    
-    
- g <- 
-   ggplot(oneOThistograms  , aes( x= x , y=ncount, color = Batch )  ) +
-      geom_line(colour="red", size=2 )+
-      
-      geom_line(data = oneOThistograms, aes(x=x, y=pred), colour="black", size=1.1, alpha=0.8)+
-      #geom_line(data = oneOThistograms, aes(x=x, y=(pred+  (pred.SE)*sqrt(nrow(oneOThistograms))  )), colour="black", size=0.5, alpha=0.3)+
-      #geom_line(data = oneOThistograms, aes(x=x, y=(pred- (pred.SE)*sqrt(nrow(oneOThistograms)) )), colour="black", size=0.5, alpha=0.3)+
-      
-      
-      
-      labs(title= paste("Smoothed Spleen signal of ", m), 
-           subtitle=paste("TMA ID: ", t), 
-           #caption="Created by M.Barone", 
-           y="Normalized Spleen signal in TMA"#, 
-           #x="Days into the experiment"
+        # for the current marker, we will do the fitting TMA by TMA.
+        # there is a multiple GAM option, but I do it the slow way to store each variable away in the tibble:
+        for(t in all_images){
+
+          oneOThistograms <- subset(histograms, Batch %in% t)
+
+          # ggplot(oneOThistograms  , aes( x= x , y = ncount)  ) +  geom_line( )
+
+          #lets create a fit with gam
+          k.start <- seq(65, 5, by = -10)
+
+          for(k in k.start){
+
+            model <- try(gam(
+              ncount~
+                # s(x),
+                s(x, bs = "gp",  k=k), #  tp, gp gaussian 4 modes  bs = "gp",
+              data=oneOThistograms,
+              method = "ML" # REML
+            ), silent = TRUE )
+
+            #now the trick is to run GAM with many modes and decrease k until the fit works. 
+            #then the following condition is met and we break out of the GAM model
+            if (is.character(model) == FALSE) break 
+
+          }
+
+          plot_smooths(     model = model, series = x )
+
+          pred <- predict.gam(model,se.fit=TRUE)
+          uniquepred <-unique(pred$fit)
+          uniquepred.SE <-unique(pred$se.fit)
+
+          oneOThistograms <- cbind(oneOThistograms,pred=as.numeric(uniquepred) ) 
+          oneOThistograms <- cbind(oneOThistograms,pred.SE=as.numeric(uniquepred.SE) )
+
+          # and return the x value of the max, and drop all info into 
+
+          #oneOThistograms[which.max(oneOThistograms$pred),]$x
+
+          spleen.normalization <- spleen.normalization %>% add_row(
+            marker = m,
+            batch = t,
+            max.signal = 10^oneOThistograms[which.max(oneOThistograms$pred),]$x
+          )
+
+          diff(sign(diff(oneOThistograms$pred)))==-2
+
+          sign(diff(oneOThistograms$pred))
+
+          g <- 
+            ggplot(oneOThistograms  , aes( x= x , y=ncount, color = Batch )  ) +
+            geom_line(colour="red", size=2 )+
+            geom_line(data = oneOThistograms, aes(x=x, y=pred), colour="black", size=1.1, alpha=0.8)+
+            #geom_line(data = oneOThistograms, aes(x=x, y=(pred+  (pred.SE)*sqrt(nrow(oneOThistograms))  )), colour="black", size=0.5, alpha=0.3)+
+            #geom_line(data = oneOThistograms, aes(x=x, y=(pred- (pred.SE)*sqrt(nrow(oneOThistograms)) )), colour="black", size=0.5, alpha=0.3)+
+            labs(title= paste("Smoothed Spleen signal of ", m), 
+              subtitle=paste("TMA ID: ", t), 
+              #caption="Created by M.Barone", 
+              y="Normalized Spleen signal in TMA"#, 
+              #x="Days into the experiment"
+            )
+
+          filename <- paste0(sub("_.*", "", m ),"_spleen_",t,"_GAMmodel.png")
+          ggsave(filename,g, width = 30, height = 20, units = "cm",dpi = 600)
+
+          # tick the progress bar before doing another TMA of said marker.
+          pb$tick()
+        } # end run along all TMAs with t
+      }# end run along spleen.col markers and plot
+
+      spleen.normalization <-   (spleen.normalization %>% group_by(marker) %>% mutate(SF =  max.signal[1] / max.signal  )) 
+      ggplot(spleen.normalization.histograms  , aes( x= batch , y=SF, group= marker, color = marker )  ) +
+        geom_line( size=2 )
+
+      # initially I wanted to use mutate() to fish out OTs and apply the SF there, but thats not working yet. so lets do the slow way:
+
+      temp.cell.dat <- data.frame()
+      for(t in all_images){
+
+        temp.subset.cell.dat <- subset(cell.dat, Batch %in% t) 
+        temp.SF <- subset(spleen.normalization, batch %in% t) 
+
+        for(b in batchnormalize.marker){
+
+          # so this just overrides the marker raw signal without any further comment
+          temp.subset.cell.dat[,c(b)] <- temp.subset.cell.dat[[b]] * temp.SF[grepl(b, temp.SF$marker ), ]$SF
+
+        }# run along all batchnormalize.markers
+
+        temp.cell.dat <- rbind(temp.cell.dat, temp.subset.cell.dat )
+
+      }# run along all batches
+
+      #this is nuts.....
+      cell.dat <- temp.cell.dat
+
+      rm(temp.cell.dat)
+      rm(temp.subset.cell.dat)
+      rm(temp.SF)
+    } # end protect from experimental code exec
+
+    if(run.experimental.code == 1){
+
+      #spleen.normalization.histograms <- spleen.normalization
+      #spleen.normalization %>% add_column( Normalized = NA )
+
+      #spleen.normalization$Nor <- ave(spleen.normalization$max.signal, spleen.normalization$batch, FUN=function(x) x/max(x))   
+
+      #spleen.normalization.histograms <-  (spleen.normalization %>% group_by(marker) %>% mutate(Nor = max.signal/max(max.signal))) 
+
+      # lets test
+
+      testcelldata <- data.frame(
+        batch = c("OT11", "OT11", "OT11", "OT11",
+          "OT2", "OT2", "OT2", "OT2",
+          "OT13", "OT13", "OT13", "OT13"),
+        ID = c("1", "2", "3", "4",
+          "1", "2", "3", "4",
+          "1", "2", "3", "4"),
+        CD3_Nd143 = c(1, 1, 1, 1,
+          2,2,2,2,
+          3,3,3,3),
+        CD4_Dy161 = c(1, 1, 1, 1,
+          2,2,2,2,
+          3,3,3,3)
       )
-    
-    filename <- paste0(sub("_.*", "", m ),"_spleen_",t,"_GAMmodel.png")
-    ggsave(filename,g, width = 30, height = 20, units = "cm",dpi = 600)
-    
-    
-    
-    # tick the progress bar before doing another TMA of said marker.
-    pb$tick()
-  } # end run along all TMAs with t
-}# end run along spleen.col markers and plot
 
+      spleen.normalization[1,]
 
+      #testcelldata[spleen.normalization$marker[1]]*spleen.normalization$SF[1]
 
-spleen.normalization <-   (spleen.normalization %>% group_by(marker) %>% mutate(SF =  max.signal[1] / max.signal  )) 
-ggplot(spleen.normalization.histograms  , aes( x= batch , y=SF, group= marker, color = marker )  ) +
-  geom_line( size=2 )
+      testcelldata[[spleen.normalization$marker[1]]]
 
+      #testcelldata %>% mutate_at( testcelldata[[spleen.normalization$marker[1]]] = testcelldata[[spleen.normalization$marker[1]]]  %>%   
+      #                            replace( testcelldata$batch == noquote(spleen.normalization$batch[1]) ,  20   ) 
+      #                      )
 
+      testcelldata %>% rowwise() %>% mutate(
+        ifelse(testcelldata$batch == noquote(spleen.normalization$batch[1]), 
+          CD3_Nd143 = testcelldata[CD3_Nd143]*spleen.normalization$SF[1], 
+          NULL)
+      )
 
-# initially I wanted to use mutate() to fish out OTs and apply the SF there, but thats not working yet. so lets do the slow way:
+      #testcelldata %>% rowwise() %>% mutate(
+      #  
+      #  spleen.normalization$marker[1] = spleen.normalization$marker[1]  %>% 
+      #  ifelse( testcelldata$batch == spleen.normalization$batch[1] ,  spleen.normalization$marker[1] *spleen.normalization$SF[1] ,        ))
 
-temp.cell.dat <- data.frame()
-for(t in all_images){
-  
- temp.subset.cell.dat <- subset(cell.dat, Batch %in% t) 
- temp.SF <- subset(spleen.normalization, batch %in% t) 
- 
-for(b in batchnormalize.marker){
-  
-  # so this just overrides the marker raw signal without any further comment
-  temp.subset.cell.dat[,c(b)] <- temp.subset.cell.dat[[b]] * temp.SF[grepl(b, temp.SF$marker ), ]$SF
+    } # end protect running experimental code with dypl to mutate parts in cell.dat
 
-
-}# run along all batchnormalize.markers
- 
- 
- 
-
-  
- temp.cell.dat <- rbind(temp.cell.dat, temp.subset.cell.dat )
-
-
-  
-}# run along all batches
-
-#this is nuts.....
-cell.dat <- temp.cell.dat
-
-rm(temp.cell.dat)
-rm(temp.subset.cell.dat)
-rm(temp.SF)
-} # end protect from experimental code exec
-
-if(run.experimental.code == 1){
-
-#spleen.normalization.histograms <- spleen.normalization
-#spleen.normalization %>% add_column( Normalized = NA )
-
-#spleen.normalization$Nor <- ave(spleen.normalization$max.signal, spleen.normalization$batch, FUN=function(x) x/max(x))   
-
-#spleen.normalization.histograms <-  (spleen.normalization %>% group_by(marker) %>% mutate(Nor = max.signal/max(max.signal))) 
-
-
-
-
-
-
-
-
-# lets test
-
-testcelldata <- data.frame(
-  
-  batch = c("OT11", "OT11", "OT11", "OT11",
-         "OT2", "OT2", "OT2", "OT2",
-         "OT13", "OT13", "OT13", "OT13"  ),
-         
-         
-  ID = c("1", "2", "3", "4",
-         "1", "2", "3", "4",
-         "1", "2", "3", "4"         ),
-  
-
-             
-
-  CD3_Nd143 = c(1, 1, 1, 1,
-          2,2,2,2,
-          3,3,3,3
-          
-          
-          ),
-  CD4_Dy161 = c(1, 1, 1, 1,
-          2,2,2,2,
-          3,3,3,3
-          
-          
-  )
-
-)
-
-
-
-
-spleen.normalization[1,]
-
-
-
-
-
-
-
-
-
-#testcelldata[spleen.normalization$marker[1]]*spleen.normalization$SF[1]
-
-
-testcelldata[[spleen.normalization$marker[1]]]
-
-#testcelldata %>% mutate_at( testcelldata[[spleen.normalization$marker[1]]] = testcelldata[[spleen.normalization$marker[1]]]  %>%   
-#                            replace( testcelldata$batch == noquote(spleen.normalization$batch[1]) ,  20   ) 
-#                      )
-
-
-testcelldata %>% rowwise() %>% mutate(
-  ifelse( testcelldata$batch == noquote(spleen.normalization$batch[1]) , CD3_Nd143 = testcelldata[CD3_Nd143]*spleen.normalization$SF[1] ,        ))
-
-
-#testcelldata %>% rowwise() %>% mutate(
-#  
-#  spleen.normalization$marker[1] = spleen.normalization$marker[1]  %>% 
-#  ifelse( testcelldata$batch == spleen.normalization$batch[1] ,  spleen.normalization$marker[1] *spleen.normalization$SF[1] ,        ))
-
-}# end protect running experimental code with dypl to mutate parts in cell.dat
-
- 
-}#end batch normalization routine
+  }#end batch normalization routine
      
 } # protect from running in first pass      
       
@@ -1516,11 +1245,11 @@ if(rebuild.cell.data.anew == 0){
   setwd(paste0("QuPath_tsv_inputs/"))
   InputDirectory <- getwd()
           
-###################### COPY-PASTE VARIABLES IF YOU DO NOT GENERATE CELL.DAT ANEW ######################
+  ###################### COPY-PASTE VARIABLES IF YOU DO NOT GENERATE CELL.DAT ANEW ######################
                   
-# we still need to know some variables that we would skip in STAGE2 and in the end of STAGE 3.
-# add them manually!! 
-if(exists("cell.dat")){  
+  # we still need to know some variables that we would skip in STAGE2 and in the end of STAGE 3.
+  # add them manually!! 
+  if(exists("cell.dat")){  
   # now, assuming that gated.cell.dat is a child of cell.dat in that folder:
   # before doing anything, lets check if the cellular.cols vector 
   # is present in cell.dat:
@@ -1565,133 +1294,134 @@ if(exists("cell.dat")){
     ), envir = .GlobalEnv)
 
   }# end check if all markers are present in cell.dat
-}# END check cellular columns from cell.dat
+  }# END check cellular columns from cell.dat
           
-# STAGE 2 did the gating and dropped a list of lists, which tells us the amount of GATE subsets we had initially gated.
-# Watch out, dont gated.cell.dat$GATEsubset as a pointer, you might have deleted in there the trashbin gate already
-if(exists("clustered.gated.subsets")){          
-amountofGATEsubsets <- length(clustered.gated.subsets)-exclude.trash.bin.gate 
-#admittedly this is a bit stupid, since we could just count the subsets in gated.cell.dat, which is the more important dataframe here..
-}# END load clustered.gated.subsets-related variables that you miss since you proceed with STAGE3
-        
-# STAGE 3 bound then only the first amountofGATEsubsets'th subsets together. You need to know a couple of palettes if you hop over STAGE3:
+  # STAGE 2 did the gating and dropped a list of lists, which tells us the amount of GATE subsets we had initially gated.
+  # Watch out, dont gated.cell.dat$GATEsubset as a pointer, you might have deleted in there the trashbin gate already
+  if(exists("clustered.gated.subsets")){          
+  amountofGATEsubsets <- length(clustered.gated.subsets)-exclude.trash.bin.gate 
+  #admittedly this is a bit stupid, since we could just count the subsets in gated.cell.dat, which is the more important dataframe here..
+  }# END load clustered.gated.subsets-related variables that you miss since you proceed with STAGE3
+          
+  # STAGE 3 bound then only the first amountofGATEsubsets'th subsets together. You need to know a couple of palettes if you hop over STAGE3:
 
-if(exists("gated.cell.dat")){
+  if(exists("gated.cell.dat")){
   
   all.MC <- unique(gated.cell.dat$Collapsed_metacluster)
   amount.of.MC <- length(all.MC)  
 
-#     CREATE polychrome palette for the unannotated Phenograph MCs
-colRange <- unique(gated.cell.dat[["Collapsed_metacluster"]])
-colRange <- colRange[order(colRange)]
-#colRange <- as.character(colRange)
-set.seed(723451) # for reproducibility
-Phenograph_metacluster_palette <- createPalette(length(colRange), c("#ff0000"), M=100000, prefix = "")
-# so, the cool thing is that once we annotated these clusters, we can just do the same game again, overrride the palette and plot again.
-names(Phenograph_metacluster_palette) <- colRange
+  #     CREATE polychrome palette for the unannotated Phenograph MCs
+  colRange <- unique(gated.cell.dat[["Collapsed_metacluster"]])
+  colRange <- colRange[order(colRange)]
+  #colRange <- as.character(colRange)
+  set.seed(723451) # for reproducibility
+  Phenograph_metacluster_palette <- createPalette(length(colRange), c("#ff0000"), M=100000, prefix = "")
+  # so, the cool thing is that once we annotated these clusters, we can just do the same game again, overrride the palette and plot again.
+  names(Phenograph_metacluster_palette) <- colRange
 
 
 
-# we re-create now annotated.Phenograph_metacluster_palette like we do after annotation:
-cluster.annots <- do.list.switch(cluster.annots)
-names(cluster.annots) <- c('Values', 'Annotated_metacluster')
-cluster.annots
-# we first need to adjust all.MC to incorporate also the annotation
-# the easy way is of course:
-all.annot.MC <- do.add.cols(as.data.frame(all.MC), 'all.MC', cluster.annots, 'Values')
-### Whatever Metacluster was not annotated got now NA
-# in our case we dont want "other" for these, but we need the original numbers back in:
-all.annot.MC <- all.annot.MC %>% 
+  # we re-create now annotated.Phenograph_metacluster_palette like we do after annotation:
+  cluster.annots <- do.list.switch(cluster.annots)
+  names(cluster.annots) <- c('Values', 'Annotated_metacluster')
+  cluster.annots
+  # we first need to adjust all.MC to incorporate also the annotation
+  # the easy way is of course:
+  all.annot.MC <- do.add.cols(as.data.frame(all.MC), 'all.MC', cluster.annots, 'Values')
+  ### Whatever Metacluster was not annotated got now NA
+  # in our case we dont want "other" for these, but we need the original numbers back in:
+  all.annot.MC <- all.annot.MC %>% 
   mutate(Annotated_metacluster = coalesce(Annotated_metacluster,all.MC))
 
 
-# now we tweak the list to be accepted by do.add.cols, but this time we inject into gated.cell.dat:
-names(all.annot.MC) <- c('Values', 'Annotated_metacluster')
+  # now we tweak the list to be accepted by do.add.cols, but this time we inject into gated.cell.dat:
+  names(all.annot.MC) <- c('Values', 'Annotated_metacluster')
 
-annotated.Phenograph_metacluster_palette <- data.frame("Collapsed_metacluster"=names(Phenograph_metacluster_palette), "color"=Phenograph_metacluster_palette, row.names=NULL)
-annotated.Phenograph_metacluster_palette <- do.add.cols(annotated.Phenograph_metacluster_palette, 'Collapsed_metacluster', all.annot.MC, 'Values')
-# you just gotta love do.add.cols, no?
+  annotated.Phenograph_metacluster_palette <- data.frame("Collapsed_metacluster"=names(Phenograph_metacluster_palette), "color"=Phenograph_metacluster_palette, row.names=NULL)
+  annotated.Phenograph_metacluster_palette <- do.add.cols(annotated.Phenograph_metacluster_palette, 'Collapsed_metacluster', all.annot.MC, 'Values')
+  # you just gotta love do.add.cols, no?
 
-annotated.Phenograph_metacluster_palette$Collapsed_metacluster <- as.numeric(as.character(annotated.Phenograph_metacluster_palette$Collapsed_metacluster))
+  annotated.Phenograph_metacluster_palette$Collapsed_metacluster <- as.numeric(as.character(annotated.Phenograph_metacluster_palette$Collapsed_metacluster))
 
-# if you annotated and then changed colors, you might want to manually change Phenograph_metacluster_palette after re-loading gated.cell.dat.
-
-
-
-
-
-
-
-#     CREATE polychrome palette for the used TMA batches
-colRange <- unique(gated.cell.dat[["Batch"]])
-colRange <- colRange[order(colRange)]
-#colRange <- as.character(colRange)
-set.seed(723451) # for reproducibility
-OTbatch_palette <- createPalette(length(colRange), c("#009E73"), M=100000, prefix = "")
-
-#swatch(OTbatch_palette) # wanna see it?
-names(OTbatch_palette) <- colRange   
-
-#     CREATE polychrome palette for the split conditions
-colRange <- unique(gated.cell.dat[[sample.col]])
-colRange <- colRange[order(colRange)]
-# we need a dirty patch, since these characters come in like this: "ND_1"   "ND_100" "ND_12"  and so on:
-colRange <- c(colRange[1],colRange[3:5],colRange[2],colRange[6:8]         )
-set.seed(723451) # for reproducibility
-Conditions_palette <- createPalette(length(colRange), c("#ff0000"), M=100000, prefix = "")
-
-#swatch(Conditions_palette) # wanna see it?
-# so, the cool thing is that once we annotated these clusters, we can just do the same game again, overrride the palette and plot again.
-names(Conditions_palette) <- colRange
-
-# update our plot.ROIs object since it still contains spleen and stuff:
-plot.ROIs  <- unique(gated.cell.dat$ROI) 
-amount.of.ROIs <- length(plot.ROIs)
-
-# this variable is initially created via cell.dat$Batch and then a second time end of STAGE 3 from gated.cell.dat like so:
-all_images <- sort(unique(gated.cell.dat$Batch)) 
-amount.of.TMAs <- length(all_images)
-
-
-# also create some vectors to run along:
-
-diet.vector <-  unique( gated.cell.dat$Diet[str_detect(gated.cell.dat$Diet, "ctr", negate=T)] )
-# with the weeks we sort them and remove the NA from the spleen sample:
-# the problem of the column is that its a character, so na.last does not work except when transforming them into numerals
-sampleweek.vector <-  sort( unique( suppressWarnings(as.numeric(gated.cell.dat$Sample_week)) ), na.last=NA ) 
-
-
-all.condtions <-   sort( unique(gated.cell.dat$Diet_week) )
-# and again, we need a dirty patch to get ND_100 back into position:
-all.condtions <- c(all.condtions[1],all.condtions[3:5],all.condtions[2],all.condtions[6:8]         )
+  # if you annotated and then changed colors, you might want to manually change Phenograph_metacluster_palette after re-loading gated.cell.dat.
 
 
 
 
 
 
-#     CREATE a palette for diet
-diet_palette <- c("ND" = "#017DD5", 
-                  "WD" = "#EB8B19"
-                  
-)
+
+  #     CREATE polychrome palette for the used TMA batches
+  colRange <- unique(gated.cell.dat[["Batch"]])
+  colRange <- colRange[order(colRange)]
+  #colRange <- as.character(colRange)
+  set.seed(723451) # for reproducibility
+  OTbatch_palette <- createPalette(length(colRange), c("#009E73"), M=100000, prefix = "")
+
+  #swatch(OTbatch_palette) # wanna see it?
+  names(OTbatch_palette) <- colRange   
+
+  #     CREATE polychrome palette for the split conditions
+  colRange <- unique(gated.cell.dat[[sample.col]])
+  colRange <- colRange[order(colRange)]
+  # we need a dirty patch, since these characters come in like this: "ND_1"   "ND_100" "ND_12"  and so on:
+  colRange <- c(colRange[1],colRange[3:5],colRange[2],colRange[6:8]         )
+  set.seed(723451) # for reproducibility
+  Conditions_palette <- createPalette(length(colRange), c("#ff0000"), M=100000, prefix = "")
+
+  #swatch(Conditions_palette) # wanna see it?
+  # so, the cool thing is that once we annotated these clusters, we can just do the same game again, overrride the palette and plot again.
+  names(Conditions_palette) <- colRange
+
+  # update our plot.ROIs object since it still contains spleen and stuff:
+  plot.ROIs  <- unique(gated.cell.dat$ROI) 
+  amount.of.ROIs <- length(plot.ROIs)
+
+  # this variable is initially created via cell.dat$Batch and then a second time end of STAGE 3 from gated.cell.dat like so:
+  all_images <- sort(unique(gated.cell.dat$Batch)) 
+  amount.of.TMAs <- length(all_images)
 
 
-# lets assign some cute colors and use it by calling scale_fill_manual(values = cond_palette)+
-cond_palette <- c("ND_1" = "#509CEF", 
-          "ND_12" = "#2070C8", 
-          "ND_14" = "#185EAB",
-          "ND_24" = "#0A4689", 
-          "ND_100" = "#042852",
-          "WD_1" = "#F48E63", 
-          "WD_12" = "#CD5420", 
-          "WD_24" = "#8F3008")
+  # also create some vectors to run along:
+
+  diet.vector <-  unique( gated.cell.dat$Diet[str_detect(gated.cell.dat$Diet, "ctr", negate=T)] )
+  # with the weeks we sort them and remove the NA from the spleen sample:
+  # the problem of the column is that its a character, so na.last does not work except when transforming them into numerals
+  sampleweek.vector <-  sort( unique( suppressWarnings(as.numeric(gated.cell.dat$Sample_week)) ), na.last=NA ) 
+
+
+  all.condtions <-   sort( unique(gated.cell.dat$Diet_week) )
+  # and again, we need a dirty patch to get ND_100 back into position:
+  all.condtions <- c(all.condtions[1],all.condtions[3:5],all.condtions[2],all.condtions[6:8]         )
+
+
+
+
+
+
+  #     CREATE a palette for diet
+  diet_palette <- c(
+    "ND" = "#017DD5",
+    "WD" = "#EB8B19"
+  )
+
+  # lets assign some cute colors and use it by calling scale_fill_manual(values = cond_palette)+
+  cond_palette <- c(
+    "ND_1"   = "#509CEF",
+    "ND_12"  = "#2070C8",
+    "ND_14"  = "#185EAB",
+    "ND_24"  = "#0A4689",
+    "ND_100" = "#042852",
+    "WD_1"   = "#F48E63",
+    "WD_12"  = "#CD5420",
+    "WD_24"  = "#8F3008"
+  )
           
 
 
-# watch out, in STAGE 1 you set the GATEsubset names together with the channels you used to cluster the data subset.
-# from this object, the code pulls the Names, from nowhere else. To get these GateSubet Names, load the object:
-# come back here, cluster.col
+  # watch out, in STAGE 1 you set the GATEsubset names together with the channels you used to cluster the data subset.
+  # from this object, the code pulls the Names, from nowhere else. To get these GateSubet Names, load the object:
+  # come back here, cluster.col
 
 
 
