@@ -1,0 +1,74 @@
+
+Phenalizer Sofware R:
+win11 settings, system, optional features make sure WMIC is installed
+More Windows features: turn on ```Virtual Machine Platform``` and ```Windows Subsystem for Linux```
+
+install VS code 
+
+powershell open as admin
+```wsl --install```
+downloading Ubuntu
+
+
+create user account. no spaces. my username is maba, this is shown in all fields below.
+
+restart pc
+
+install https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-wsl
+extensions WSL connect WSL: Ubuntu
+
+pull up from bottom bash terminal. you are at /home/username/
+```mkdir projects``` 
+```cd projects```
+from there clone Repo. sign in to GitHub and close Phenalizer https://github.com/mabar1/Phenalyzer
+set repo destination to home/username/projects and open
+in bash you see now that you are in ```maba@DESKTOP-TH5JAGE:~/projects/Phenalyzer$``` 
+
+now we need first R 4.5 in ubuntu, using r_installer.sh
+ls -l shows you got only read in that file, so change that:
+```chmod 777 r_installer.sh```
+now the file should show read write execute for all.
+launch by typing ```./r_installer.R```
+use password you set up for WSL Ubuntu
+(go and make a coffee while occasionally hitting enter or typing y)
+close VS code after install
+open and check in bash where your R installation is:
+```which R``` should return ```/usr/bin/R```
+
+install extension REditorSupport
+restart VS code
+you should be still in Terminal, bash.
+on top right initialize R terminal and klick on it. it should start up R 4.5.
+```install.packages("languageserver")```
+R wants to install into unwritable ```usr/local/lib/R/site-library``` cause we didnt specify lib path.
+Would you like to use personal lib instead? yes
+all packages are from now on written into ```/home/maba/R/x86_64-pc-linux-gnu-library/4.5``` yes
+
+restart vs code
+
+next, we install radian:
+in bash terminal ```sudo apt install pipx``` same password as before
+followed by ```pipx install radian```
+for some package dependencies (such as s2, stars, nloptr, FlowSOM) we will need cmake as well, once we are here, lets install:
+ ```sudo apt install cmake```
+restart vs code to make the bin of radian to be seen:
+```which radian``` now shows ```/home/maba/.local/bin/radian```
+open VS code settings by pressing shift+ctr+p and open settings UI (or ctr+,). search for rterm, specifically the field  ```R>Rterm: Linux``` where you paste ```/home/maba/.local/bin/radian```. Then search for radian and find the field R: Bracketed Paste and enable it
+close and restart VS code
+if you initialize an R terminal, you will see that the command line changed and starts now with a blue ```r$>``` : this means radian took over the R frontend
+
+next we turn on the plot viewer httpgd. open settings via ctr+, search for ```r.plot.useHttpgd``` and turn on 
+
+in the newly opened R terminal we will start installing packages now. we need remotes:  ```install.packages("remotes")```, then lintr ```remotes::install_github("r-lib/lintr")```. Linting is good, but I found lintr to be too Karen about my code, so I toned it down. 
+This next step is up to you. go to your bash terminal type ```cd ~``` which brings you home to where you create a lintr file: ```vi ./lintr```. This is an empty text file. paste there 
+
+```linters: with_defaults(
+  line_length_linter = NULL,
+  open_curly_linter = NULL,
+  commented_code_linter = NULL,
+  trailing_whitespace_linter = NULL)
+
+  ```
+  watch out, lintr is very fussy about this file: the closing bracket needs to be on the line of the last command and there must be a blank line at the end! Make sure you hit enter from the last option line so that the tilde on the empty line is gone. only then press esc, followed by ```:``` this will stop editing and you will notice a : popping up at the end of the file. write and close file by typing ```wq``` 
+
+  restart VS code and source the ```environment_setup.R``` to install all packages needed for Phenalizer. Make a second coffee, this will last.

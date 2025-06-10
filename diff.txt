@@ -1,1374 +1,1952 @@
-diff --git a/Phenalyzer_v2.R b/Phenalyzer_v2.R
-index f04dbaa..153a89f 100644
---- a/Phenalyzer_v2.R
-+++ b/Phenalyzer_v2.R
-@@ -156,9 +156,11 @@ whichSTAGE <- 0
+diff --git a/README.md b/README.md
+index 471f7a1..43d3892 100644
+--- a/README.md
++++ b/README.md
+@@ -1,6 +1,41 @@
+-# Phenalyzer Software R Setup Guide
++# 1. Phenalyzer Workflow Overview
++Phenalyzer is a pipeline to process and analyze raw data PhenoCycler qptiff files. The workflow consists of two steps with their separate software packages:
++- **Step 1: Segment TMA cores in QuPath using CellPose:**
++  - Load qptiff files and dearray TMA into cores
++  - Run CellPose groovy script 
++      - Combine multiple membrane markers for boundary stain
++      - Nucleated and anucleated cell profiles are stored
++      - Automatically calculate marker-wise mean/median/min/max of each cell's nucleus/cytoplasma/membrane/entire area
++  - Optional: run object classification 
++  - Export tsv file of segmented cells
++- **Step 2: Phenalyzer Data Processing in R (VS Code):**
++  - Import tsv files and map metadata
++  - Gate cells into subsets
++  - Clustering/Heatmap of each subsets
++  - Collapse and/or annotate clusters
++  - Optional: load spatial proximity masks
  
- if(whichSTAGE == 0){
- 
--
--# at start up, we get the working directoy,
-+#--------------------------------------
-+# Set Working Directory of the code
- # and source the setting.
-+#--------------------------------------
+-## 1. Windows Preparation
 +
- dirname(rstudioapi::getActiveDocumentContext()$path)            # Finds the directory where this script is located
- setwd(dirname(rstudioapi::getActiveDocumentContext()$path))     # Sets the working directory to where the script is located
- getwd()
-@@ -167,23 +169,34 @@ PrimaryDirectory
- source("global_settings.R") 
- source("load_packages.R") # load all packages we need for the script to run
- # now that we loaded spectre, lets make sure the default functions get overwritten with the adapted functions
--source("utils_v0.R") # we need this line here when we run STAGE 0 the first time.
--
--
-+source(paste0("utils_v",utils_version,".R")) # we need this line here when we run STAGE 0 the first time.
-+#--------------------------------------
-+# Set Output Directory Tree
-+#--------------------------------------
- date <- gsub('-','',strsplit(x = as.character( Sys.time() ), split = ' ')[[1]][1])
-+setwd(PrimaryDirectory)
-+dir.create("output")
-+setwd("output")
- 
-+dir.create(date)
-+setwd(date)
-+OutputDirectory <- getwd()
 +
-+dir.create("Data")
-+setwd("Data")
-+OutputDataDirectory <- getwd()
- 
- 
-   
--# 
 +
- 
- if (!exists("how.often.ran.STAGE0")){
--    #first time you run STAGE 0 create the counter
--    how.often.ran.STAGE0<-0
--    }else{
--    # after first run, increase counter
--    how.often.ran.STAGE0<-how.often.ran.STAGE0+1
--    }
-+  #first time you run STAGE 0 create the counter
-+  how.often.ran.STAGE0<-0
-+}else{
-+  # after first run, increase counter
-+  how.often.ran.STAGE0<-how.often.ran.STAGE0+1
-+}
- 
- 
- # Load Metadata file 
-@@ -198,15 +211,77 @@ if(!any(grepl("\\.tsv$", sample.meta$tsv.file.name))){
- 
- 
- 
++# 2. Phenalyzer QuPath CellPose Setup Guide
++### 2.1 Install Programs
++- **Install python**
++  - Download
++- **Install CellPose**
++  - Download
++- **Install QuPath**
++  - Download
 +
 +
 +
 +
 +
 +
++# 3. Phenalyzer Software R Setup Guide
 +
 +
-+
-+
-+
-+
-+
-+
- if(rebuild.cell.data.anew == 1){
++### 3.1 Windows Preparation
  
+ - **Enable Required Features:**
+   - Go to Windows Settings → System → Optional Features and ensure **WMIC** is installed.
+@@ -16,115 +51,112 @@
+     ```powershell
+     wsl --install
+     ```
+-  - Follow prompts to download Ubuntu and create a user account (no spaces in username).
++  - It will download Ubuntu by default. Follow prompts and create a user account (no spaces in username).
  
-+#--------------------------------------
-+# Set Input Directory
-+# if we rebuild anew, the input directory is the QuPath_tsv_inputs folder
-+#--------------------------------------
-+setwd(PrimaryDirectory)
-+setwd(paste0("QuPath_tsv_inputs/")) # we hop into Data right way: in here are all tsv we will load
-+InputDirectory <- getwd()
-+InputDirectory
-+
-+
-+
-+#--------------------------------------
-+# load tsv files from QuPath Cellpose Segmentation
-+#--------------------------------------
-+setwd(InputDirectory)
-+# Merge all tsv files in all.tsv.files
-+all.tsv.files <- list.files(pattern = "\\.tsv$") 
-+# Read all files into a list of data frames
-+tsv_list <- lapply(seq_along(all.tsv.files), function(i) {
-+  df <- readr::read_tsv(all.tsv.files[i])
-+  df <- tibble::add_column(df, "tsv file" = all.tsv.files[i], .after = 2)
-+  df <- df %>% dplyr::rename_all(~ make.names(.))
-+  df
-+})
-+
-+# Generalized code to compare all n list entries and print which names are different between any of the list entries
-+all_names <- lapply(tsv_list, names)
-+unique_names <- unique(unlist(all_names))
-+for (i in seq_along(tsv_list)) {
-+  missing_in_i <- setdiff(unique_names, names(tsv_list[[i]]))
-+  if (length(missing_in_i) > 0) {
-+    cat(sprintf("tsv_list[[%d]] (%s) is missing columns: %s\n", 
-+                i, all.tsv.files[i], paste(missing_in_i, collapse = ", ")))
-+  } else {
-+    cat(sprintf("tsv_list[[%d]] (%s) has all columns present.\n", 
-+                i, all.tsv.files[i]))
-+  }
-+}
-+
-+
-+# Append all data frames row-wise
-+PCF_data <- dplyr::bind_rows(tsv_list)
-+rm(tsv_list)
-+
+ - **Restart your PC.**
  
- #--------------------------------------
- # Prepare the marker names  that we process
- #--------------------------------------
--# the code in the stages is still using the old column names.
--# lets assemble the markers we process here and pass the old object name into the code:
-+# before we even do anything, 
-+# lets make sure there is no typo in the Markers2Process vector:
-+
-+# lets assemble the column names of the markers we will process.
-+# we do not just asseble the columns based on Markers2Process, but
-+# we attempt to pull these assebled columns from PCF_data...
- cellular.cols <- names(
- PCF_data %>%
-   dplyr::select(
-@@ -222,8 +297,7 @@ PCF_data %>%
-   )
- )
+-## 2. VS Code & WSL Integration
++### 3.2 VS Code & WSL Integration
  
--
--# before we even do anything, lets make sure there is no typo in the Markers2Process vector:
-+# ...and then can check if all markers are present in the data:
- if(length(Markers2Process) != length(cellular.cols)){
-   cat(paste0("\n\n\n----------------------------------- \n ERROR in STAGE0 start-up   \n Not all markers to process further were found in your data \n  Check your Markers2Process vector and make sure it matches the marker spelling \n -> Seems you misspelled ",length(Markers2Process)-length(cellular.cols)," of the following entries? \n")) 
-   temp.string <- names(
-@@ -262,54 +336,10 @@ if(length(Markers2Process) != length(cellular.cols)){
- }
+-- **Install WSL Extension in VS Code:**
++- **Install WSL Extension in VS Code and connect to Ubuntu:**
+   - Install [Remote - WSL](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-wsl).
++  - In the bottom left of VS code you can now connect to WSL, which loads Ubuntu
  
+-- **Connect to WSL:**
+-  - Open VS Code, connect to WSL: Ubuntu.
+-
+-- **Set Up Project Directory:**
+-  - In the bash terminal:
++- **Create Target Directory For Project:**
++  - The bottom panel of VS Code is minimized by default. You can either pull up the bottom line of VS code with the mouse, or toggle the panel (`Ctrl+J`)
++  - By defaulte the terminal will show a bash terminal in your home directory on the Ubuntu side, which is `/home/maba`. 
++  - In your user home directory, make a projects folder where we pull the GitHub repo(s). Two commands will create the folder and hop into it:
+     ```bash
+     mkdir projects
+     cd projects
+     ```
+-  - Clone the Phenalyzer repo from GitHub:
++- **Clone Phenalizer repo:**    
++  - You can now clone the Phenalyzer repo from GitHu you can either clone it via the GUI and setting the destination to `/home/maba/projects` and then open it, or use the bash terminal straight away:
+     ```bash
+     git clone https://github.com/mabar1/Phenalyzer
+     cd Phenalyzer
+     ```
++  - After cloning the repo, you will notice that the terminal is set to 
++    ```bash
++    maba@DESKTOP-TH5JAGE:~/projects/Phenalyzer$
++    ```
++  - Since the repo is not cloning any .tsv files, the input folder is not cloned and we create it now manually. All .tsv files go in this folder:
++    ```bash
++    mkdir QuPath_tsv_inputs
++    ```
  
--
--
--
--#--------------------------------------
--# Set InputDirectory
--# load tsv files from QuPath Cellpose Segmentation
--#--------------------------------------
--setwd(PrimaryDirectory)
--setwd(paste0("QuPath_tsv_inputs/")) # we hop into Data right way: in here are all tsv we will load
--InputDirectory <- getwd()
--InputDirectory
--all.tsv.files <- list.files(pattern = "\\.tsv$") 
--
--
--# Merge all tsv files in all.tsv.files
--# Read all files into a list of data frames
--tsv_list <- lapply(seq_along(all.tsv.files), function(i) {
--  df <- readr::read_tsv(all.tsv.files[i])
--  df <- tibble::add_column(df, "tsv file" = all.tsv.files[i], .after = 2)
--  df <- df %>% dplyr::rename_all(~ make.names(.))
--  df
--})
--
--
--# Generalized code to compare all n list entries and print which names are different between any of the list entries
--all_names <- lapply(tsv_list, names)
--unique_names <- unique(unlist(all_names))
--for (i in seq_along(tsv_list)) {
--  missing_in_i <- setdiff(unique_names, names(tsv_list[[i]]))
--  if (length(missing_in_i) > 0) {
--    cat(sprintf("tsv_list[[%d]] (%s) is missing columns: %s\n", 
--                i, all.tsv.files[i], paste(missing_in_i, collapse = ", ")))
--  } else {
--    cat(sprintf("tsv_list[[%d]] (%s) has all columns present.\n", 
--                i, all.tsv.files[i]))
--  }
--}
--
--
--# Append all data frames row-wise
--PCF_data <- dplyr::bind_rows(tsv_list)
--rm(tsv_list)
--
--
--
- #--------------------------------------
- # Clear up PCF_data before proceeding
--# the cellpose code is heavily adapted, so things in there need clean up:
-+# the qupath code to run CellPose is heavily adapted
-+# so measurement export from qupath needs clean up:
- #--------------------------------------
+-## 3. Install R 4.5 in Ubuntu
++### 3.3 Install R 4.5 in Ubuntu
  
- # 1) due to assembling the cells manually, TMA.column is empty,
-@@ -319,11 +349,11 @@ PCF_data <- PCF_data %>%
-   dplyr::select(-TMA.core) %>%
-   dplyr::rename(TMA.core= Name)
- 
--# 2) when assembling the cells, we also added cell membrane objects without nucleus
--# in mucosa for example, you cut a lot of cells without nuclei, but we want them nevertheless.
--# if you do NOT do a obeject classification in QuPath, Classification column is populated with 
--# exactly this information: "nucleated profile" and "anucleated profile". 
--# if you DO classify the object, this tag is being overwritten with your classes.
-+# 2) when assembling the cells, we also added non-nucleated cells
-+# if you do NOT do a object classification in QuPath, 
-+# Classification column is populated with exactly this information:
-+# "nucleated profile" and "anucleated profile". 
-+# if you DO classify the object, these tags are overwritten with your classes.
- # but dont worry, we bring the nucleation status back by checking the intensities of Cytoplasm:
- # anucleated profiles have nuc and cyto the same polygon, so Cytoplasm becomes NA in these cells:
- 
-@@ -332,7 +362,7 @@ if ("Classification" %in% names(PCF_data)) {
-   unique_vals <- unique(na.omit(PCF_data$Classification))
-   allowed_vals <- c("nucleated profile", "anucleated profile")
-   if (all(unique_vals %in% allowed_vals) && length(unique_vals) <= 2) {
--    # Only allowed values present, just rename
-+    # No classification ran, profile annotations are correct:
-     PCF_data <- PCF_data %>%
-       dplyr::rename(Object.cross.section = Classification)
-   } else {
-@@ -363,25 +393,6 @@ PCF_data <- PCF_data[!apply(PCF_data[, cellular.cols], 1, function(row) all(is.n
- }
- rm(cells_with_all_na)
- 
+-- **Make Installer Executable:**
++- **Make Installer Executable and Install R:**
++  - We strongly advice you to use WSL Ubuntu to run R, rather than installing the packages on the Windows side. This however means that we need to install R now also on the virtual machine. This is straight forward using the ```r_installer.sh``` script. After cloning, this script is read-only, and we need to change the permissions of that file in the bash terminal. Make sure you are still in the cloned directory and did not hop accidentally into the input folder. Then change its permission to read, write and execute by typing:
+   ```bash
+   chmod 777 r_installer.sh
+   ```
+-- **Run the Installer:**
++  - afterwards, installing R is a piece of cake:
+   ```bash
+   ./r_installer.R
+   ```
+-  - Enter your Ubuntu password as needed.
+-  - Follow prompts (press Enter or type `y` as required).
 -
--### Create output directory
--setwd(PrimaryDirectory)
--dir.create(date)
--setwd(date)
--OutputDirectory <- getwd()
--
--
--dir.create("Data")
--setwd("Data")
--OutputDataDirectory <- getwd()
--
--setwd(OutputDirectory)
--dir.create("Plots")
--OutputPlotDirectory <- getwd()
--
--
--
--
- #--------------------------------------
- # Mapping Metadata to the cellular data
- #--------------------------------------
-@@ -389,7 +400,7 @@ OutputPlotDirectory <- getwd()
- # check if any of the tsv files has NA in the TMA.core column:
- if(any(is.na(PCF_data$TMA.core))){
-   message("TMA.core column in PCF_data has NA values")
--  message("-> Assuming there was not TMA present and attempt to map metadata by tsv file names.")
-+  message("-> Assuming there was no TMA present and mapping metadata by tsv file names:")
+-- **Verify R Installation:**
++  - Enter your Ubuntu password as needed. Afterwards you can go and make a tea while occasionally pressing Enter of type yes as required.
++  - After installation, restart VS code and verify that the R installation was successfull by calling for it in the bash terminal:
+   ```bash
+   which R
+   ```
+-  - Should return `/usr/bin/R`.
++  - To which the terminal should return: `/usr/bin/R`.
  
-   # remove the TMA.core column from sample.meta. We got this column already in PCFdata and would not be able to map 
-   #if more than one column name are shared among the two files:
-@@ -399,12 +410,10 @@ if(any(is.na(PCF_data$TMA.core))){
-   PCF_data <- do.add.cols(as.data.frame(PCF_data), base.col = 'tsv.file', add.dat = sample.meta, add.by = 'tsv.file.name')
-   message("Mapping metadata to the cellular data complete")
+-## 4. VS Code R Environment
++### 3.4 Prepare VS Code R Environment
  
+ - **Install REditorSupport Extension in VS Code.**
+-- **Restart VS Code.**
 -
+-- **Initialize R Terminal in VS Code:**
+-  - Click the R terminal button (should start R 4.5).
 -
+-- **Install Language Server in R:**
+-  ```r
+-  install.packages("languageserver")
+-  ```
+-  - If prompted about unwritable directories, choose to use your personal library (e.g., `/home/maba/R/x86_64-pc-linux-gnu-library/4.5`).
++  - Install [R Extension for Visual Studio Code](https://marketplace.visualstudio.com/items?itemName=reditorsupport.r) from the Marketplace or by searching for `REditorSupport` in the Extensions tab on the left panel of VS Code.
++  - Restart VS Code
++- **Install Language Server in R**
++  - R needs to be initialized in VS Code. So far we had only one profile launched in the bottom panel, the bash terminal. Before installing any R packages, the R terminal is initialized by either clikcing the R R terminal button at the very bottom right of VS Code, or by clicking the `+` button on the right side, above the cube-icon of bash. Both actions should start R 4.5 in a second terminal. In the R terminal, we install R packages like so:
++   ```r
++   install.packages("languageserver")
++   ```
++  - R will attempt to install the packages into the unwritable `usr/local/lib/R/site-library` because we did not specify a library path. It therefore will promt you to use a personal library instead (probably inside your user directory here: `/home/maba/R/x86_64-pc-linux-gnu-library/4.5`). Confirm that.
+ 
+ - **Restart VS Code.**
+ 
+-## 5. Install radian (Improved R Console)
+ 
+-- **Install pipx and radian:**
++### 3.5 Install add-ons to improve R Console experience: radian
++ While the following three extensions are optional, installing radian is highly recommended. Radian is a python-based frontend that turns your R code more interactive by highlighting syntax or auto-completing your commands. 
++- **Install radian (Improved R Console):**
++  - radian is installed from the bash console. Since it is a python application wrapping around the R library, pipx will take care of the installation in a minute. We need pipx first, followed by radian:
+   ```bash
+   sudo apt install pipx
+   pipx install radian
+   ```
 -
- }else {
- 
-   # normal case: we have TMA.core column in PCF_data
-+  message("-> TMA core IDs found, mapping each core:")
-   # sample.meta tsv.file.name column is already set, so is PCF_data$tsv.file
- 
-   # We need a unique TMA - core ID to tell the cores apart:
-@@ -444,7 +453,7 @@ if(any(is.na(PCF_data$TMA.core))){
- 
- } # end mapping: PCF_data$TMA.core was there.
- 
--# now that we mapped batch numbers, we can clear entire cores:
-+# now that we mapped batch numbers, we could clear entire cores:
- #e.g. PCF_data <- PCF_data[ grep("20250228_27X_bleaching trial (control).tsv_B-2",  PCF_data$TMA.ID_core, invert = TRUE) , ]
- 
- 
-@@ -457,63 +466,22 @@ rm(PCF_data)
- 
- 
- 
--####################### all settings done. lets do some stuff needed for all stages ##########################
--        
--       # once we cleared out, store all TMA names away for the upcoming plotting machines
--all_images  <- unique(cell.dat$Image)
--amount.of.TMAs  <- length(all_images)
+-- **Install cmake for package dependencies:**
+-  ```bash
+-  sudo apt install cmake
+-  ```
 -
--all_cores  <- unique(cell.dat$TMA.ID_core)
--amount.of.cores  <- length(all_cores)
+-- **Restart VS Code.**
 -
--
--        
--        
--        
--# we push the proper column names into the markercomparision list:
--# now there is a chance you dont want to transform, in that case these columns might not even exist:
--if (transform.rawdata == T) {
--  markercomparision <- lapply(scatter.plots, function(x) ifelse( is.na(x), NA,
--        paste0(
--          x,
--          qupath.separator,
--          cellular.segment.compartment,
--          qupath.separator,
--          cellular.segment.readout,
--          "_t",asinh.cofactor
--        )
--      )
--  )
--  # markercomparision <- lapply(scatter.plots, function(x) ifelse(is.na(x), NA, paste0(x, qupath.separator,cellular.segment.readout,"_t",asinh.cofactor)  ))
--} else {
--  # in this case the transform flag does not exist but only the raw columns:
--  markercomparision <- lapply(
--    scatter.plots,
--    function(x)
--      ifelse(
--        is.na(x),
--        NA,
--        paste0(
--          x,
--          qupath.separator,
--          cellular.segment.compartment,
--          qupath.separator,
--          cellular.segment.readout
--        )
--      )
--  )
--}
--
--        
-+# all settings done. 
-+# initialize following stage 0 varibles :
-+# all_images, amount.of.TMAs, all_cores, amount.of.cores, markercomparision
-+list2env( initialize_stage_0_variables(
-+  cell.dat = cell.dat,
-+  scatter.plots = scatter.plots,
-+  transform.rawdata = transform.rawdata,
-+  qupath.separator = qupath.separator,
-+  cellular.segment.compartment = cellular.segment.compartment,
-+  cellular.segment.readout = cellular.segment.readout,
-+  asinh.cofactor = asinh.cofactor
-+), envir = .GlobalEnv)
+-- **Verify radian Installation:**
+-  ```bash
+-  which radian
+-  ```
+-  - Should return `/home/maba/.local/bin/radian`.
++  - **Restart VS Code.**
++  - after restarting VS Code, the bash terminal should be able to locate the radian installation. Type in the bash terminal:
++    ```bash
++    which radian
++    ```
++  - This should return `/home/maba/.local/bin/radian`.
  
--        
+ - **Configure VS Code to Use radian:**
+   - Open settings (`Ctrl+Shift+P` → "Preferences: Open Settings (UI)" or `Ctrl+,`).
+-  - Search for `Rterm` and set **R > Rterm: Linux** to `/home/maba/.local/bin/radian`.
++  - Search for `Rterm`, specifically the field **R > Rterm: Linux** and paste there your path: `/home/maba/.local/bin/radian`.
+   - Search for `radian` and enable **R: Bracketed Paste**.
+   - Close and restart VS Code.
++  - If you initialize now a new R terminal, you will see that the command line changed and starts with a blue `r$>`, indicating radian is active and runs the R terminal frontend.
  
--        
--        
+-- **Check Radian in Terminal:**
+-  - Open a new R terminal. The prompt should start with a blue `r$>`, indicating radian is active.
+-
+-## 6. Enable Plot Viewer
+-
+-- **In VS Code Settings:**
+-  - Search for `r.plot.useHttpgd` and enable it.
+-
+-## 7. Linting Setup (Optional)
++### 3.6 Install add-ons to improve R Console experience: Plot Viewer
++  - httpgd is by now fully integrated into VS Code. As the name suggests, this is an extension that watches your session and sends all plots through a WebSocket to a virtual server that allows you to interact with your plots and keeps all plots stored in one window.
++- Open the VS Code Settings and search for `r.plot.useHttpgd` and enable it. All plots will now pop up in the same panel.
+ 
+-- **Install remotes and lintr in R:**
++### 3.7 Install add-ons to improve R Console experience: Linting (lintr)
++  - `lintr` is a R package, so you need to initialize an R console. We install the newest version from GitHub, for that we need a second package `remotes` that is pulling  `lintr`. Both packages will go into the user directory as before: `/home/maba/R/x86_64-pc-linux-gnu-library/4.5`
+   ```r
+   install.packages("remotes")
+   remotes::install_github("r-lib/lintr")
+   ```
+ 
+-- **Customize lintr (Optional):**
++- Lintr is a good way to write code correctly. However I found lintr to be too strict, so I toned linter down. To customize lintr, we create a starup file that disables a couple of linter settings. This file is created in your homes directory. We use the bash terminal for this:
+   - In bash:
+     ```bash
+     cd ~
+     vi ./lintr
+     ```
+-  - Paste the following (ensure the closing bracket is on the last line and there is a blank line at the end):
++  - This is an empty text file. Paste the following lines. Watch out, linter is *very fussy* about this file: Ensure the closing bracket is on the last line of the last command and there is a blank line at the end. Make sure you hit enter to create that last line:
+     ```r
+     linters: with_defaults(
+       line_length_linter = NULL,
+@@ -133,10 +165,15 @@
+       trailing_whitespace_linter = NULL)
+ 
+     ```
+-  - In `vi`, press `Esc`, type `:wq` to save and exit.
+-
+-## 8. Install Phenalyzer Dependencies
++  - To store the file, press `Esc`, type `:wq` to save and exit.
++  - Restart VS Code. If the terminal has notable delay and does not respond to your commands, the chances are high that the `./lintr` file is wrongly formated.
+ 
++## 4. Install Phenalyzer Dependencies
++- Since we are already in the bash termianl, let us also install cmake, which we will later need to install some R packages (such as `s2, stars, nloptr, FlowSOM`). cmake has nothing to to with the radian installation, we just install it in the same go
++- **Install cmake for package dependencies:**
++  ```bash
++  sudo apt install cmake
++  ```
+ - **Restart VS Code.**
+ - **Source the `environment_setup.R` script in your R terminal:**
+   ```r
+diff --git a/diff.txt b/diff.txt
+index 5e32f4c..3f0fb34 100644
+--- a/diff.txt
++++ b/diff.txt
+@@ -1,1711 +0,0 @@
+-diff --git a/Phenalyzer_v2.R b/Phenalyzer_v2.R
+-index 153a89f..beef806 100644
+---- a/Phenalyzer_v2.R
+-+++ b/Phenalyzer_v2.R
+-@@ -3486,7 +3486,7 @@ if(plot.segementation.areas == 1){
+- g <- 
+-   ggplot(data=cell.dat, aes(x=gsub("(.{15,}?)_", "\\1\n", cell.dat$Image), y= Cell..Area.µm.2,color=as.factor(outside.area) )) + #, colour=Batch 
+-   
+--  geom_quasirandom( size = 2 ) + #alpha=0.8
+-+geom_quasirandom( size = 2 ) + #alpha=0.8
 -  
- 
- 
--              
- ###### Start spill-over correction routine ######         
- if(correct.spill.over ==1){
-           
-@@ -1489,132 +1457,115 @@ testcelldata %>% rowwise() %>% mutate(
- 
-  
- }#end batch normalization routine
--      
-- 
--      
--      
--      
--      
--      
--      
-+     
- } # protect from running in first pass      
-       
--#end default stage 1: load data from first script and generate cell.dat anew     
--}else{ 
--# alternate 0 and we just need to read in the already written cell.dat file and its friends:
--          
--          
--          ### Set PrimaryDirectory
--          
--          dirname(rstudioapi::getActiveDocumentContext()$path)            # Finds the directory where this script is located
--          setwd(dirname(rstudioapi::getActiveDocumentContext()$path))     # Sets the working directory to where the script is located
--          getwd()
--          PrimaryDirectory <- getwd()
--          PrimaryDirectory
--          
--          ### Set InputDirectory
--          
--          # Now you want to re-load the files, switch the input directory temporally to:
--          # of course you have to 
--          setwd(PrimaryDirectory)
--          setwd(paste0("Output 2 - cellular analysis/",date.of.clustered.gated.subsets,"/Data/") )
--          InputDirectory <- getwd()
--          InputDirectory
--          
--          file_loading.Lyrics <-  paste("\n\n\n")
--          file_loading.Lyrics <-  paste(file_loading.Lyrics, "_____________________________________________________________________________\n\n")
--          
--          
--          # now there is a chance that you want to proceed with STAGE 2. in that case you need one of these two guys:
--          all.STAGE0.cell.dats <- list.files(pattern = '.qs')
--          
--          
--           # as you can see, we load both cell.dats into the re-running code. 
--          # We decide which one will enter into STAGE1 via the calculate.scaling.factors==1 condition.
--          if("scaled.cell.dat.qs" %in% all.STAGE0.cell.dats){ scaled.cell.dat <- qread("scaled.cell.dat.qs")  
--          file_loading.Lyrics <-  paste(file_loading.Lyrics, "   Loaded scaled.cell.dat -> proceed with STAGE 1 and calculate.scaling.factors=1\n",   sep="")}
--          
--          if("unscaled.cell.dat.qs" %in% all.STAGE0.cell.dats){ cell.dat <- qread("unscaled.cell.dat.qs")  
--          file_loading.Lyrics <-  paste(file_loading.Lyrics, "   Loaded (un-scaled) cell.dat -> proceed with STAGE 1 and calculate.scaling.factors=0\n",   sep="")}
--          
--          
--          
--          
--          if("clustered.gated.subsets.qs" %in% all.STAGE0.cell.dats){ clustered.gated.subsets <- qread("clustered.gated.subsets.qs")  
--          file_loading.Lyrics <-  paste(file_loading.Lyrics, "   Loaded clustered.gated.subsets -> proceed with STAGE 3\n",   sep="")
--          }
--          
--         
--          
--          # currently, STAGE 3 only stores away the ready-to-go gated.cell.dat: gated, annotated, collapsed:
--          all.STAGE3.files <- list.files(pattern = '.csv')
--          
--          if("all.cells.csv" %in% all.STAGE3.files){ all.cells  <- fread("all.cells.csv")  # this is not STAGE 3 produced, but we need it for late stages
--          file_loading.Lyrics <-  paste(file_loading.Lyrics, "   Loaded all.cells -> proceed with STAGE 4+\n",   sep="")}
--          
--          if("gated.cell.dat.csv" %in% all.STAGE3.files){ gated.cell.dat <- fread("gated.cell.dat.csv")  
--          file_loading.Lyrics <-  paste(file_loading.Lyrics, "   Loaded gated.cell.dat -> proceed with STAGE 4+\n",   sep="")}
--          
--          if("masked.gated.cell.dat.csv" %in% all.STAGE3.files){ masked.gated.cell.dat <- fread("masked.gated.cell.dat.csv")  
--          file_loading.Lyrics <-  paste(file_loading.Lyrics, "   Loaded masked.gated.cell.dat -> proceed with STAGE 5+\n",   sep="")}       
--          
--          
--          
--          file_loading.Lyrics <-  paste(file_loading.Lyrics, "_____________________________________________________________________________\n\n")
--          message("Loading backed up cellular data file(s) complete. Check the files and proceed accordingly:")
--          cat( file_loading.Lyrics )
--          
--          # now that cell.dat is loaded, switch back to default input directory:      
--          ### Set InputDirectory 
--          
--          setwd(PrimaryDirectory)
--          setwd(paste0("Output 1 - add masks/",date.of.spatial.dat,"/Data")) # we hop into Data right way: in here is spatial.dat.qs and cell.dat.csv and area.totals.csv
--          InputDirectory <- getwd()
--          InputDirectory
--          
--          
--          ### Create output directory
--          
--          setwd(PrimaryDirectory)
--          dir.create("Output 2 - cellular analysis")
--          setwd("Output 2 - cellular analysis")
--          dir.create(date)
--          setwd(date)
--          OutputDirectory <- getwd()
--          OutputDirectory
--          
--          dir.create('Data')
--          setwd('Data')
--          OutputDataDirectory <- getwd()
--          
--  
-+    
-+} #end default stage 1: load data from first script and generate cell.dat anew 
-+
-+if(rebuild.cell.data.anew == 0){
-+
-+  #--------------------------------------
-+  # Set Input Directory
-+  # if we rebuild anew, the input directory is the QuPath_tsv_inputs folder
-+  #--------------------------------------
-+
-+  setwd(PrimaryDirectory)
-+  setwd(paste0("output/",day.to.reload.data,"/Data/") )
-+  InputDirectory <- getwd()
-+
-+
-+  file_loading.Lyrics <-  paste("\n\n\n")
-+  file_loading.Lyrics <-  paste(file_loading.Lyrics, "_____________________________________________________________________________\n\n")
-+
-+  # now there is a chance that you want to proceed with STAGE 2,
-+  # so lets load all files in Data directory:
-+  all.STAGE0.cell.dats <- list.files(pattern = '.qs')
-+
-+  # as you can see, we load both cell.dats into the re-running code. 
-+  # We decide which one will enter into STAGE1 via the calculate.scaling.factors==1 condition.
-+  if("scaled.cell.dat.qs" %in% all.STAGE0.cell.dats){ scaled.cell.dat <- qread("scaled.cell.dat.qs")  
-+  file_loading.Lyrics <-  paste(file_loading.Lyrics, "   Loaded scaled.cell.dat -> proceed with STAGE 1 and calculate.scaling.factors=1\n",   sep="")}
-+
-+  if("unscaled.cell.dat.qs" %in% all.STAGE0.cell.dats){ cell.dat <- qread("unscaled.cell.dat.qs")  
-+  file_loading.Lyrics <-  paste(file_loading.Lyrics, "   Loaded (un-scaled) cell.dat -> proceed with STAGE 1 and calculate.scaling.factors=0\n",   sep="")}
-+
-+  if("clustered.gated.subsets.qs" %in% all.STAGE0.cell.dats){ clustered.gated.subsets <- qread("clustered.gated.subsets.qs")  
-+  file_loading.Lyrics <-  paste(file_loading.Lyrics, "   Loaded clustered.gated.subsets -> proceed with STAGE 3\n",   sep="")  }
-+
-+  # gated.cell.dat from STAGE 3+ is ready-to-go: it is
-+  # gated, cluster collapsed and annotated, might contain masks
-+  all.STAGE3.files <- list.files(pattern = '.csv')
-+
-+  if("all.cells.csv" %in% all.STAGE3.files){ all.cells  <- fread("all.cells.csv")  # this is not STAGE 3 produced, but we need it for late stages
-+  file_loading.Lyrics <-  paste(file_loading.Lyrics, "   Loaded all.cells -> proceed with STAGE 4+\n",   sep="")}
-+
-+  if("gated.cell.dat.csv" %in% all.STAGE3.files){ gated.cell.dat <- fread("gated.cell.dat.csv")  
-+  file_loading.Lyrics <-  paste(file_loading.Lyrics, "   Loaded gated.cell.dat -> proceed with STAGE 4+\n",   sep="")}
-+
-+  if("masked.gated.cell.dat.csv" %in% all.STAGE3.files){ masked.gated.cell.dat <- fread("masked.gated.cell.dat.csv")  
-+  file_loading.Lyrics <-  paste(file_loading.Lyrics, "   Loaded masked.gated.cell.dat -> proceed with STAGE 5+\n",   sep="")}       
-+
-+  file_loading.Lyrics <-  paste(file_loading.Lyrics, "_____________________________________________________________________________\n\n")
-+  message("Loading backed up cellular data file(s) complete. Check the files and proceed accordingly:")
-+  cat( file_loading.Lyrics )
-+
-+  # now that cell.dat is loaded, switch back to default input directory:      
-+  ### Set InputDirectory 
-+  setwd(PrimaryDirectory)
-+  setwd(paste0("QuPath_tsv_inputs/"))
-+  InputDirectory <- getwd()
-           
- ###################### COPY-PASTE VARIABLES IF YOU DO NOT GENERATE CELL.DAT ANEW ######################
-                   
--# in this case we do not end with cell.dat, but with gated.cell.dat.
--# but we still need to know some variables that we would skip in STAGE2 and in the end of STAGE 3. 
--# so lets load them separately:
--if(exists("cell.dat")){            
--  cellular.cols <- names(cell.dat %>% dplyr:: select(starts_with( paste0(Markers2Process, "_") )))
--  if(length(Markers2Process) != length(cellular.cols) ){
--    print("Check the marker names to process and the cell.dat columns. They do not match.")
--    print("I did not find all of them in cell.dat.")
--    print( paste0("Seems you misspelled ",length(Markers2Process)-length(cellular.cols)," of the following entries?") )
--    print( 
--      as.matrix( names(cell.dat %>% 
--                         dplyr:: select(-starts_with( paste0(Markers2Process, "_") )) %>% 
--                         # lets remove all metadata columns we just added
--                         dplyr:: select(-starts_with( names(sample.meta) ))  %>%
--                         # lets also remove the spatial.dat columns
--                         dplyr:: select(-starts_with( c("ID", "x","y","Area") )) 
--      ))
--    )
-+# we still need to know some variables that we would skip in STAGE2 and in the end of STAGE 3.
-+# add them manually!! 
-+if(exists("cell.dat")){  
-+  # now, assuming that gated.cell.dat is a child of cell.dat in that folder:
-+  # before doing anything, lets check if the cellular.cols vector 
-+  # is present in cell.dat:
-+
-+  # we do not care for typos as we do if we rebuild cell.dat from scratch, but simply 
-+  # test if 
-+
-+  if(!all(paste0(
-+    Markers2Process,
-+    qupath.separator,
-+    cellular.segment.compartment,
-+    qupath.separator,
-+    cellular.segment.readout ) %in% names(cell.dat)) ){
-+
-+    cat("\n\n\n----------------------------------- \n ERROR in STAGE 0 initialization.   \n 
-+      The loaded cell.dat does not contain all markers to process \n  
-+      Please check the Markers2Process vector and the cell.dat columns \n 
-+      -> You are likely using an outdated cellular column list or cell.dat \n-----------------------------------\n\n") 
-+    stop()   
-+
-     
--    stop()
--  }
--  
--  
--}# END load cellular columns from cell.dat
-+  } else {
-+
-+    cellular.cols <- paste0(
-+    Markers2Process,
-+    qupath.separator,
-+    cellular.segment.compartment,
-+    qupath.separator,
-+    cellular.segment.readout )
-+
-+    # all settings done. 
-+    # initialize following stage 0 varibles :
-+    # all_images, amount.of.TMAs, all_cores, amount.of.cores, markercomparision
-+    list2env( initialize_stage_0_variables(
-+      cell.dat = cell.dat,
-+      scatter.plots = scatter.plots,
-+      transform.rawdata = transform.rawdata,
-+      qupath.separator = qupath.separator,
-+      cellular.segment.compartment = cellular.segment.compartment,
-+      cellular.segment.readout = cellular.segment.readout,
-+      asinh.cofactor = asinh.cofactor
-+    ), envir = .GlobalEnv)
-+
-+  }# end check if all markers are present in cell.dat
-+}# END check cellular columns from cell.dat
-           
- # STAGE 2 did the gating and dropped a list of lists, which tells us the amount of GATE subsets we had initially gated.
- # Watch out, dont gated.cell.dat$GATEsubset as a pointer, you might have deleted in there the trashbin gate already
-@@ -1867,7 +1818,7 @@ cat("\n\n\n----------------------------------- \n End of STAGE 0. \n I did not f
- # yes, we source that everytime anew, just in case we are fiddling in there I wanna be sure R loads the right functions
- if(whichSTAGE > 0){
-   setwd(PrimaryDirectory)
--  source("utils_v0.R") 
-+  source(paste0("utils_v",utils_version,".R"))
- }
- 
- if(whichSTAGE == 1){
-@@ -1877,7 +1828,7 @@ if(whichSTAGE == 1){
-   
- # in case we scaled, we will store away cell.dat and replace that object with scaled.cell.dat. 
- if(calculate.scaling.factors==1){
--  # this is nuts, we gonna just override now the raw data:
-+  # override now the raw data:
-   cell.dat <- scaled.cell.dat
-   message("\n\n\n################################################\n# Scaled raw data are being used from here on! #\n################################################")
- }
-@@ -1910,133 +1861,152 @@ cell.dat$outside.area <-mapply(function.range.penalty,i=cell.dat$Cell..Area.µm.
- 
- 
-       
--
--################# Flag gated cells #################
-+#------------------------------
-+# Gating cells by flagging:
-+# -> Transform marker signals
-+#------------------------------
- 
- # gating is done either on raw or transformed data,
- # depending on whether transform.data is TRUE or FALSE
- # if TRUE, we need to transform the data now using do.data.normalization:
- if(transform.rawdata == TRUE){
--         cell.dat <-  do.data.normalization(dat=cell.dat, 
--                                           use.cols=cellular.cols, 
--                                           # Transform
--                                           do.transform = transform.rawdata,
--                                           cofactor = asinh.cofactor,
--                                           # min-max normalize?
--                                           do.minmax = FALSE,
--                                           new.min = min.norm, 
--                                           new.max = max.norm,
--                                           # z-score normalize?
--                                           do.zscore = FALSE
--                                           ) 
--
--
--
--  
--}# end transform.data == TRUE
--
--
--
--
--
-+  cell.dat <- do.data.normalization(
-+    dat = cell.dat,
-+    use.cols = cellular.cols,
-+    # Transform
-+    do.transform = transform.rawdata,
-+    cofactor = asinh.cofactor,
-+    # min-max normalize?
-+    do.minmax = FALSE,
-+    new.min = min.norm,
-+    new.max = max.norm,
-+    # z-score normalize?
-+    do.zscore = FALSE
-+  )
-+} # end transform.data == TRUE
- 
- 
- 
--    
--      
--# as of v0.4 we do hierarchical gating and clustering, so we need some more gates, and we gonna do that now automatically via loop:
--# this idea is brought back from shinyIMC but is even more generalized here since we need boolean AND, which requires 2 gate lines on the plot
-+#------------------------------
-+# Gating cells by flagging
-+# -> Threshold gates supplied in the metadata file
-+#------------------------------
- 
--# for the upcoming plotting, we got a function that will check if xMarker or yMarker is part of gate_affected.markers
-+# the plotting engine will will check if the marker on x/y axis is used as gate
-+# if so, it will add the gate line in the plot
-+# we will therefore collect all markers that are affected by a gate line and store them in gate_affected.markers
- gate.col.expr <- c(".highpass", ".lowpass")   
- threshold.gates <- names(cell.dat)[ grep( paste(gate.col.expr, collapse="|")   , colnames(cell.dat) ) ]
--# this pulled as well the area.highpass and area.lowpass columns, so drop these:
-+# this pulled any gate threshold, but also the area.highpass and area.lowpass columns, so drop these:
- threshold.gates <- grep("area.", threshold.gates, invert=TRUE, value = TRUE)   
--# if you re-run stage 1, you also pull out the already set flag columns, and you need to remove them as well:
-+# if you re-run stage 1, you also pull out the already set flag columns
-+# remove them as well:
- threshold.gates <- grep("outside.", threshold.gates, invert=TRUE, value = TRUE) 
- 
-+# we prepare the gate_affected.markers vector either way:.after# for plotting, we need to know the channel AB affected by a gate:
-+gate_affected.markers <-    sub(".[^.]+$", "", threshold.gates ) # character 0 if no threshold.
-+
-+# if you do not supply and thresholdgates (yet), gate_affected.markers stays an empty character vector for now and we skip the upcoming part: 
-+if (!identical(threshold.gates, character(0))) {
-+
-+  #------------------------------
-+  # Flagging cells with threshold gates
-+  #------------------------------
-+
-+  for (g in threshold.gates) {
-+
-+    # HIGH-PASS GATE FLAGGING
-+    if (grepl(".highpass", g)) {
-+      # do not chop off the marker and then grep it from cell.dat!
-+      # you risk to fish more than one marker: CD3 grep will return CD3, CD31, CD321 and so on...
-+      # just remove the last dot and assemble the column name:
-+
-+      temp.gated.marker <- lapply(
-+        sub(".[^.]+$", "", g),
-+        function(x) ifelse(
-+          transform.rawdata == TRUE,
-+          paste0(
-+            x,
-+            qupath.separator,
-+            cellular.segment.compartment,
-+            qupath.separator,
-+            cellular.segment.readout,
-+            "_t", asinh.cofactor
-+          ),
-+          paste0(
-+            x,
-+            qupath.separator,
-+            cellular.segment.compartment,
-+            qupath.separator,
-+            cellular.segment.readout
-+          )
-+        )
-+      )
-+      # we initialized it already, push the markes now in:
-+      gate_affected.markers <- c(gate_affected.markers, temp.gated.marker)
-+
-+      # watch out, this column name structure is afterwards used to pull the flags, such as in "outside.",yMarker,".highpass". Caution if you wanna change that...
-+      cell.dat[, paste0("outside.", g)] <- mapply(
-+        function.lower.penalty,
-+        i = cell.dat[[temp.gated.marker]],
-+        j = as.numeric(cell.dat[[g]])
-+      )
- 
--# for plotting, we need to know the channel AB affected by a gate:
--gate_affected.markers <-    sub(".[^.]+$", "", threshold.gates ) 
--
--# if you do not supply and thresholdgates (yet), gate_affected.markers stays an empty character vector and we skip the upcoming part: 
--if(  !identical(gate_affected.markers, character(0))  ){
--
--
--
--# next line is a unreadable.
--# we gonna pull multiple patterns at once, so we need to collapse the AB names first, and to each we pasted an underscore before grepping. 
--# This makes sure we dont pull CD3xx and CD3xx if we just wanted CD3, for example
--gate_affected.markers <-names(cell.dat)[ grep(  paste( paste0(gate_affected.markers,"_")   , collapse="|")   , colnames(cell.dat))]  
--
-+      passed.cells <- table(cell.dat[[paste0("outside.", g)]])[1]
-+      message(
-+        g, " GATE: ", passed.cells, " cells (",
-+        round(passed.cells / nrow(cell.dat) * 100, 2),
-+        "%) passed high-pass gate of ", temp.gated.marker
-+      )
- 
--# next line is depreciated since we use .highpass with a dot separated
--# and then drop the gate.col.expr-containing col names again:
--#gate_affected.markers <- grep( paste(gate.col.expr, collapse="|") , gate_affected.markers, invert=TRUE, value = TRUE) 
-+    } # end high-pass flagging
-+
-+    # LOW-PASS GATE FLAGGING
-+    if (grepl(".lowpass", g)) {
-+
-+      temp.gated.marker <- lapply(
-+        sub(".[^.]+$", "", g),
-+        function(x) ifelse(
-+          transform.rawdata == TRUE,
-+          paste0(
-+            x,
-+            qupath.separator,
-+            cellular.segment.compartment,
-+            qupath.separator,
-+            cellular.segment.readout,
-+            "_t", asinh.cofactor
-+          ),
-+          paste0(
-+            x,
-+            qupath.separator,
-+            cellular.segment.compartment,
-+            qupath.separator,
-+            cellular.segment.readout
-+          )
-+        )
-+      )
- 
-+      # we initialized it already, push the markes now in:
-+      gate_affected.markers <- c(gate_affected.markers, temp.gated.marker)
- 
+-   scale_color_manual(name = "Area outlier flag", values = c("#308441", "#F6CD7A"))+ #, 
+-   
+-@@ -8902,7 +8902,7 @@ g<- ggsave(paste0("Core_", i, "_tissue_", sample.meta[ sample.meta$TMA.core  ==
+-                   nrow = 5, scales="free_y"
+-       )+
+-       geom_violin(trim=T)+
+--      geom_quasirandom(alpha=1,size=2) +
+-+  geom_quasirandom(alpha=1,size=2) +
+-       scale_colour_manual( values = temp.palette , limits = force  )+
+-       
+-       # significance brackets are cut off, expand axis:
+-@@ -9080,7 +9080,7 @@ g<- ggsave(paste0("Core_", i, "_tissue_", sample.meta[ sample.meta$TMA.core  ==
+-                 nrow = 5, scales="free_y"
+-     )+
+-     geom_violin(trim=T)+
+--    geom_quasirandom(alpha=1,size=2) +
+-+geom_quasirandom(alpha=1,size=2) +
+-     scale_colour_manual( values = tumorStage_grouped_palette, limits = force  )+
 -     
-+      cell.dat[, paste0("outside.", g)] <- mapply(
-+        function.upper.penalty,
-+        i = cell.dat[[temp.gated.marker]],
-+        j = as.numeric(cell.dat[[g]])
-+      )
- 
-+      passed.cells <- table(cell.dat[[paste0("outside.", g)]])[1]
-+      message(
-+        g, " GATE: ", passed.cells, " cells (",
-+        round(passed.cells / nrow(cell.dat) * 100, 2),
-+        "%) passed low-pass gate of ", temp.gated.marker
-+      )
- 
-+    } # end low-pass flagging
- 
+-     # significance brackets are cut off, expand axis:
+-@@ -9423,46 +9423,46 @@ g<- ggsave(paste0("Core_", i, "_tissue_", sample.meta[ sample.meta$TMA.core  ==
+-   ## it gets even sexier than a for loop and call the plotting engine over column element as y:
+-   make.violin.multiplot.v2 = function (column, legendtitle, yaxisstring, data) {
+-     
+--    
+--    ggplot( data, 
+--            aes_string(x = data$Cond, 
+--                       y = data[[ column ]], 
+--                       colour=data$MC 
+--            )
+--    )+
+--      facet_wrap2(.~MC, 
+--                  strip = strip,
+--                  labeller = labeller(source = facet.labs),
+--                  nrow = 1,
+--                  scales="free_y")+
+--      geom_violin(trim=T)+
+--      geom_quasirandom(alpha=1,size=2) +
+--      scale_colour_manual( values = subset.Phenograph_metacluster_palette, limits = force  )+
+--      
+--      labs(title=column , 
+--           #subtitle=subtitlestring, 
+--           # caption=test.stat.lyrics, 
+--           y=yaxisstring, 
+--           x="",
+--           color=legendtitle
+--      )+
+--      theme(panel.background = element_rect(fill = "grey90", colour = "grey55", linewidth = 0.5), # change 'colour' to black for informative axis
+--            axis.title.x=element_text(color="grey15", size=11),
+--            axis.title.y=element_text(color="grey15", size=11),
+--            axis.text=element_text(size=8),
+--            axis.text.x = element_text(angle = 45, hjust=1),
+--            #legend.text=element_text(size=12), # large = 30 # small = 8 # taken out since we define that in the legend layouts just above here. 
+--            legend.key.height=unit(1,"cm"), # large = 3 # small = 1.2
+--            legend.key.width=unit(0.4,"cm"), # large = 1 # small = 0.4
+--            #legend.title=element_blank(),
+--            legend.position="right",
+--            plot.title = element_text(color="Black", size=14, hjust=0), # size 70 for large, # 18 for small
+--            plot.subtitle = element_text(color = "Black", size = 12, hjust = 0)
+--      )
+--    
+--  }
+--  
+--  
+-+
+-+ggplot( data, 
+-+        aes_string(x = data$Cond, 
+-+                    y = data[[ column ]], 
+-+                    colour=data$MC 
+-+        )
+-+)+
+-+  facet_wrap2(.~MC, 
+-+              strip = strip,
+-+              labeller = labeller(source = facet.labs),
+-+              nrow = 1,
+-+              scales="free_y")+
+-+  geom_violin(trim=T)+
+-+  geom_quasirandom(alpha=1,size=2) +
+-+  scale_colour_manual( values = subset.Phenograph_metacluster_palette, limits = force  )+
+-+  
+-+  labs(title=column , 
+-+        #subtitle=subtitlestring, 
+-+        # caption=test.stat.lyrics, 
+-+        y=yaxisstring, 
+-+        x="",
+-+        color=legendtitle
+-+  )+
+-+  theme(panel.background = element_rect(fill = "grey90", colour = "grey55", linewidth = 0.5), # change 'colour' to black for informative axis
+-+        axis.title.x=element_text(color="grey15", size=11),
+-+        axis.title.y=element_text(color="grey15", size=11),
+-+        axis.text=element_text(size=8),
+-+        axis.text.x = element_text(angle = 45, hjust=1),
+-+        #legend.text=element_text(size=12), # large = 30 # small = 8 # taken out since we define that in the legend layouts just above here. 
+-+        legend.key.height=unit(1,"cm"), # large = 3 # small = 1.2
+-+        legend.key.width=unit(0.4,"cm"), # large = 1 # small = 0.4
+-+        #legend.title=element_blank(),
+-+        legend.position="right",
+-+        plot.title = element_text(color="Black", size=14, hjust=0), # size 70 for large, # 18 for small
+-+        plot.subtitle = element_text(color = "Black", size = 12, hjust = 0)
+-+  )
+-+
+-+}
+-+
+-+
+-   
+-   
+-   u <- lapply(normalizations.to.do ,make.violin.multiplot.v2, 
+-diff --git a/README.md b/README.md
+-index 8b13789..471f7a1 100644
+---- a/README.md
+-+++ b/README.md
+-@@ -1 +1,149 @@
+-+# Phenalyzer Software R Setup Guide
 - 
--## ........................ THRESHOLD GATE FLAGGING   ........................  
--# this idea is brought back from shinyIMC and adapted for automatic gating:
--for(g in threshold.gates){
--  
--  #HIGH-PASS GATE FLAGGING
--  if(  grepl(".highpass", g)   ){
--  
--  # we need to pull the marker col name first.
--  #strip off the gate tag
--  temp.gated.marker <-  sub(".[^.]+$", "", g )
--  # pull all cols with that AB. same game as before: paste0 the underscore before grepping pulls only one marker:
--  temp.gated.marker <- names(cell.dat)[ grep( paste0( temp.gated.marker  ,"_" )  , colnames(cell.dat))]
--  
--  
--  # using a . for all high/lowpasses in the metadata makes the next line depreciated
--  # drop the gate col name again. 
--  #temp.gated.marker <- grep("pass", temp.gated.marker, invert=TRUE, value = TRUE) 
--  
--  
--  # watch out, this column name structure is afterwards used to pull the flags, such as in "outside.",yMarker,".highpass". Caution if you wanna change that...
--  cell.dat[, paste0("outside.", g) ]  <- mapply(function.lower.penalty,i=cell.dat[[temp.gated.marker]], j= as.numeric(cell.dat[[ g ]])  )
--  
--  
--  passed.cells <- table(cell.dat[[ paste0("outside.", g) ]])[1]
--  message(g, " GATE: ", passed.cells,    " cells (", round( passed.cells/nrow(cell.dat)*100,2)   ,"%) passed high-pass gate of ", temp.gated.marker    )
--  
--} # end high-pass flagging   
--  
--  
--  #LOW-PASS GATE FLAGGING
--  if(  grepl(".lowpass", g)   ){
--    
--    # we need to pull the marker col name first.
--    #strip off the gate tag
--    temp.gated.marker <-  sub(".[^.]+$", "", g )
--    # pull all cols with that AB:
--    temp.gated.marker <- names(cell.dat)[ grep( paste0( temp.gated.marker  ,"_" )  , colnames(cell.dat))]
--    
--    # again, using a . for all high/lowpasses in the metadata makes the next line depreciated
--    # drop the gate col name again unnecessary:
--    #temp.gated.marker <- grep("pass", temp.gated.marker, invert=TRUE, value = TRUE) 
--    
--    
--    cell.dat[, paste0("outside.", g) ]  <- mapply(function.upper.penalty,i=cell.dat[[temp.gated.marker]], j=as.numeric(cell.dat[[ g ]])  )
--    
--    
--    passed.cells <- table(cell.dat[[ paste0("outside.", g) ]])[1]
--    message(g, " GATE: ", passed.cells,    " cells (", round( passed.cells/nrow(cell.dat)*100,2)   ,"%) passed low-pass gate of ", temp.gated.marker    )
--    
--  } # end low-pass flagging   
--  
--  
--  
--  
--} # end run with g along all threshold gates and create the Hgate or Lgate flag columns in cell.dat
-+  } # end run with g along all threshold gates and create the Hgate or Lgate flag columns in cell.dat
- 
--}# end flagging with threshold gates supplied in the metadata file
-+} # end flagging with threshold gates supplied in the metadata file
- 
- 
- 
-@@ -3251,6 +3221,11 @@ ggplot(cell.dat, aes(x = CD45..Mean)) +
- 
- } # end run.experimental.code
- 
-+
-+
-+
-+
-+
- ###################### QC: gates and segmentation penalties ######################
- 
- 
-@@ -3264,7 +3239,7 @@ all.gate.flags <- grep(".area", all.gate.flags, invert= TRUE, value = TRUE )
- # and we already wrote out the threshold gate column names: threshold.gates
- 
- # what we miss is a way to run through all.gate.flags and find the threshold by which they were created.
--# if the flag was created with a threshold, you would find a column missing outside.:
-+# if the flag was created with a threshold, you would find a column missing "outside." :
- all.marker.thresholds <-  sub("^.*?\\.", "", all.gate.flags) 
- # to keep the start of the sentence you need to do it this way around: ^, 
- #see https://stackoverflow.com/questions/72966851/r-how-to-extract-everything-after-first-occurance-of-a-dot
-@@ -3279,16 +3254,6 @@ if(plot.TMAwise.gates == 1){
-   setwd(OutputDirectory)
-   dir.create('1 - QC Gates on TMAs')
-   setwd('1 - QC Gates on TMAs')
--  
--
--
--
--
--  
--
--  
--  
--
- 
-   # for the progess bar we need to differenciate whether we gonna loop through the gate flags at all or not:
-   
-diff --git a/global_settings.R b/global_settings.R
-index 3f8b597..2f868c2 100644
---- a/global_settings.R
-+++ b/global_settings.R
-@@ -1,8 +1,16 @@
-+# if change code, use git diff > didf.txt, drop it on copilot and ask to make a message out of it
- run.experimental.code<-0
-+
- ########################## STAGE 0 SETTINGS ##########################
- 
-+# helper functions are stored in the utils file
-+# define the version you want to use here:
-+# use it for project-specific stuff
-+# e.g: "0" will load utils_v0.R 
-+utils_version <- "0" 
-+
- # Do we start from scratch or re-load an old run?
--# - - - - - - - - - - - - - - - - - - - - - - - - 
-+#-------------------------------------------------
- # 0: Load all data saved away from previous run. 
- # Caution1: for 0 changes in the metadata file wont be incorporated since you skip STAGE 0
- # Caution2: Since you essentially skip STAGE 0-3 entirely, you need to supply a good amount of variables manually here: "COPY-PASTE VARIABLES IF YOU DO NOT GENERATE CELL.DAT ANEW"
-@@ -10,10 +18,10 @@ run.experimental.code<-0
- rebuild.cell.data.anew <- 1 # 1 recommended 
- 
- # for rebuild.cell.data.anew=0: Reload an old run, so get backup data frames (such as gated.cell.dat) from this date:
--date.of.clustered.gated.subsets <- 20231018 # date from where to load data: use 18th Oct to include the trashbin gate and proper cluster numbers in G2
-+day.to.reload.data <- 20231018 # date from where to load data: use 18th Oct to include the trashbin gate and proper cluster numbers in G2
- 
- # Get the files from this add-masks integration run:
--# - - - - - - - - - - - - - - - - - - - - - - - - - 
-+#-------------------------------------------------
- # 20230113 comes from a global segementation model with all 4 TMAs
- # 20240524 is Steinbock but now with CK18 channel but mask.tiff in cell.dat somehow
- # 20240525 finally clean and good
-@@ -22,14 +30,16 @@ date.of.spatial.dat <- 20240525 # do.fast.extract did that one
- 
- 
- # Get the metadata 
--# - - - - - - - - - - - - - - - - - - -
-+#-------------------------------------------------
- # Point to Metadata stored as excel sheet with an absolute path. This way you know exaclty what file was loaded.
--#metadatapath <- c("D:/IMI/IMC/IM - Matthaus Felsenstein/Metadata_Project Matthäus Isis_JJ.xlsx") # cross-checked by Juliette, added the gate thresholds 20230313
--# use additional metadata for the re-do of the data at v17+ 
-+# for gate thresholds, is is crucial that they have the format:
-+# CD123.highpass, CD122.lowpass
-+# furthermore you need area.highpass and area.lowpass columns in square micrometers
-+# this select cells area.highpass < segmentation areas < .lowpass area penalties
- metadatapath <- c("Small TMA_testing_metadata.xlsx") # cross-checked by Juliette, added the gate thresholds 20230313
- 
- # Data transformation and normalization:
--# - - - - - - - - - - - - - - - - - - -
-+#-------------------------------------------------
- # Transformation will create columns with a "_t5", short for asinh transformed with cofactor 5 (ry different factors and check if heatmap makes sense)
- # If this is turned on, the normalization will happen on these columns and not the raw data anymore!
- # Min-max normalize transformed signals? Additional to _t5, they will get "_m0m1" showing you the boundaries you have defined
-@@ -50,7 +60,7 @@ cellular.segment.readout <- "Mean" # or "Median", "Min", "Max"
- 
- 
- # Spillover correction via excel sheet:
--# - - - - - - - - - - - - - - - - - - -
-+#-------------------------------------------------
- correct.spill.over <- 0 
- # 20211021_BeCeFa_spillmat.xlsx is from the panel design
- # 20200617_Messung6_sm.xlsx is from Franziska given on 20220601
-@@ -62,19 +72,19 @@ correct.spill.over <- 0
- 
- 
- # Tissue types supplied via metadata. Positive Control core name
--# - - - - - - - - - - - - - - - - - - - - - - - - -
-+#-------------------------------------------------
- tissue.type.col <- "Tissue.type"
- postive.control.Tissue.name <- "spleen" # name of the tissue as defined in the metadata file. Watch out, these cells are deleted later on.
- 
- # depreciated:
- # Positive Control coreBatch normalization of markers present on pos-ctr. 
--# - - - - - - - - - - - - - - - - - - - - - - - - -
-+#-------------------------------------------------
- # if you want to do spillover and batch normalization, run stage 0 the first time with correct.spill.over 0 as well as scaling factors off
- # after you checked currently selected "Cellular cols", turn spillover and scaling on for the second+ runs (no worry, I will run it only once)
- # IMPORTANT: if you perform batch normalization, leave calculate.scaling.factors on 1 for the upcoming stages. Do NOT turn that back to 0!
- calculate.scaling.factors <- 0 # do batch normalization: 1, off: 0
- # Batchnormalization: Markers to normalize at the given percentile across all TMA. 
--# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
-+#-------------------------------------------------
- # Data will be rescaled onto the n-th percentile of one marker
- # The one TMA whose set percentile signal is closest to the median of all TMA percentiles becomes the anchor sample: 
- # The anchor sample signal is then used to calculate the individual scaling factors for the remaining TMAs 
-@@ -110,7 +120,7 @@ batch.normalization.matrix <- c(
- 
- 
- # Define which markers are transformed and normalized 
--# - - - - - - - - - - - - - - - - - - - - - - - - - -
-+#-------------------------------------------------
- 
- # since v18-ish we do no longer use column numbers to pull the markers since this is very fragile.
- # instead we supply the markers and let the code build up the column name by itself. 
-@@ -159,7 +169,7 @@ Markers2Process <- c(
- 
- 
- # Set the order of the markers to show up in the heatmap 
--# - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-+#-------------------------------------------------
- # this needs manual adaptation. All markers that go into clustering will be plotted in the heatmap. 
- # you need them all in this list and give them some order that helps looking at the heatmap:
- 
-@@ -178,7 +188,7 @@ global.marker.order <-Markers2Process
- 
- 
- # Define key columns supplied via metadata file
--# - - - - - - - - - - - - - - - - - - - - - - - 
-+#-------------------------------------------------
- # here we just plug the col names from the sample.meta: see above: # so from now on we need to all Sample as Sample_week Group as Diet Batch as Batch
- roi.col <- 'ROI'
- #sample.col we had Sample_week, but this does not allow me to split afterwards "Sample_week"
-@@ -192,7 +202,7 @@ batch.col <- 'Image'
- 
- 
- # Define marker combinations that you need to look at when finding your gating routine
--# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-+#-------------------------------------------------
- # While plotting the scatter plot, the code will use different coloring:
- #  1) if no gate is present for any of the two markers, the plot comes with a soothing blue
- #  2) if a gate is found, the cells are color-coded according whether they passed the gate or not
-@@ -213,7 +223,7 @@ scatter.plots <- list(
- 
- 
- # Quality Control and plots for setting up gating thresholds:
--# - - - - - - - - - - - - - - - -
-+#-------------------------------------------------
- # 1: Check positions of gates and segmentation area penalties?
- plot.TMAwise.gates <- 0
- # 2: Check the distribution of cell segementation area across TMAs and tissues?
-@@ -235,7 +245,7 @@ scatterplots.gatingsteps.packaging = "marker"#-wise
- 
- # Set up gating routine (first part)
- # -> the second is found in the code at "SET UP GATING ROUTINE")
--# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
-+#-------------------------------------------------
- 
- #lets define some names for the gated subsets that we can use to store the files with unique names as we run through the GATEsubset:
- # be aware that we gate all bounced back cells in an additional gate, the trash bin gate so to say. 
-diff --git a/load_packages.R b/load_packages.R
-index 9c419c9..c50fcd0 100644
---- a/load_packages.R
-+++ b/load_packages.R
-@@ -39,6 +39,7 @@ library(ggrepel) # repelling labels in make.colour.plot
- library(scico) # just like brewer, another package to deliver color grads. We need that for the scatter plots of two variables, along with the stat_density_2d lines
- library(Polychrome) # another color palette aiming for colors maximally separated
- library(ggbeeswarm) # call quasirandom 
-+library(gridExtra)
- #library(tidyverse) # use pipes to handle data.frames
- library(stringr) # use strings to process conditions. we use str_detect to pull out strings from Diet vector
- 
-diff --git a/utils_v0.R b/utils_v0.R
-index 6575e1b..2ab71d8 100644
---- a/utils_v0.R
-+++ b/utils_v0.R
-@@ -1,6 +1,77 @@
- # Advanced spatial 2 - modified functions.R changed to: Phenalyzer_utils.R on 20250328 since PCF is incomaptible with the old code
- 
--# Lets make a wrapper function to take care of all transformation and normalization in one go:
-+
-+#--------------------------------------
-+# initialize stage0 varibables:
-+#--------------------------------------
-+
-+initialize_stage_0_variables <- function(cell.dat, 
-+                                        scatter.plots, 
-+                                        transform.rawdata,
-+                                       qupath.separator, 
-+                                       cellular.segment.compartment, 
-+                                       cellular.segment.readout, 
-+                                       asinh.cofactor) {
-+  
-+  # Store the image and core names away for the upcoming plotting machines
-+  all_images <- unique(cell.dat$Image)
-+  amount.of.TMAs <- length(all_images)
-+  
-+  all_cores <- unique(cell.dat$TMA.ID_core)
-+  amount.of.cores <- length(all_cores)
-+  
-+  # In the global settings, we work only with the marker names for convenience.
-+  # We push the proper column names into the markercomparision list:
-+  # Now there is a chance you dont want to transform, in that case these columns might not even exist:
-+  if (transform.rawdata == TRUE) {
-+    markercomparision <- lapply(scatter.plots, function(x) {
-+      ifelse(is.na(x), NA,
-+        paste0(
-+          x,
-+          qupath.separator,
-+          cellular.segment.compartment,
-+          qupath.separator,
-+          cellular.segment.readout,
-+          "_t", asinh.cofactor
-+        )
-+      )
-+    })
-+  } else {
-+    # In this case the transform flag does not exist but only the raw columns:
-+    markercomparision <- lapply(scatter.plots, function(x) {
-+      ifelse(is.na(x), NA,
-+        paste0(
-+          x,
-+          qupath.separator,
-+          cellular.segment.compartment,
-+          qupath.separator,
-+          cellular.segment.readout
-+        )
-+      )
-+    })
-+  }
-+  
-+  # Return as a list instead of global assignment
-+  return(list(
-+    all_images = all_images,
-+    amount.of.TMAs = amount.of.TMAs,
-+    all_cores = all_cores,
-+    amount.of.cores = amount.of.cores,
-+    markercomparision = markercomparision
-+  ))
-+  
-+}
-+
-+
-+
-+
-+
-+
-+
-+#--------------------------------------
-+# transformation and normalization:
-+#--------------------------------------
-+
- do.data.normalization <- function (dat, 
-                                    use.cols, 
-                                    do.transform = FALSE,
-@@ -83,8 +154,9 @@ do.data.normalization <- function (dat,
- 
- 
- 
--
--# lets make a wrapper function for the spill-over matrix correction of RAW data:
-+#--------------------------------------
-+# IMC: spill-over matrix correction
-+#--------------------------------------
- do.spill.over.corr <- function( dat = cell.dat,
-                                 spillover.matrix.path = spillover.matrix.path,
-                                 donor.col.name = "acq.chnl"
-@@ -221,6 +293,9 @@ do.spill.over.corr <- function( dat = cell.dat,
- 
- 
- 
-+#--------------------------------------
-+# Heatmap
-+#--------------------------------------
- 
- # the old heatmap wrapper is gonna be depreciated soon. we use complex heatmap for this. Here are the functions we need:
- fh = function(x) fastcluster::hclust(dist(x))
-@@ -543,7 +618,9 @@ make.pheatmap <- function (dat,
- 
- 
- 
--
-+#--------------------------------------
-+# Colour plot functions
-+#--------------------------------------
- make.colour.plot <- function (dat, x.axis, y.axis, 
-                               point.alpha,  # I added an alpha channel for the geom_point for col.type=factor coloring plots
-                               col.axis = NULL, col.type = "continuous", 
-@@ -904,12 +981,6 @@ make.colour.plot <- function (dat, x.axis, y.axis,
- } # end function def make.colour.plot
- 
- 
--
--
--
--
--
--
- make.colour.plot.adapted <- function (dat, x.axis, y.axis, 
-                               col.axis = NULL, col.type = "continuous", 
-                               add.label = FALSE, hex = FALSE, hex.bins = 30, 
-@@ -1320,20 +1391,6 @@ make.colour.plot.adapted <- function (dat, x.axis, y.axis,
- } # end function def make.colour.plot.adapted
- 
- 
--
--
--
--
--
--
--
--
--
--
--
--
--
--
- # Adapt some functions. These are based on v1.0.0 functions, but the adaptation is coming from when I tweaked them in 0.5.4. 
- # the setup of make.spatial.plot is still the same:
- #this is just a copy-paste of Advaced spatial 1 v2, but now we call it .adapted, since I changed the annotated cells and use global color palette...
-@@ -1748,18 +1805,9 @@ make.spatial.plot.adapted <- function(dat, # spatial data object
- }#end make.spatial.plot adaptation
- 
- 
--
--
--
--
--#CD45_Er168, ~GLP.1R_Yb174
--
--# this function requires three more variables that get produced as the engine runs trhough the markercomparision in a m-loop:
--# it will strip off the _*isotope* and create a marker string of the AB:
--#xMarker <- sub("_[^_]+$", "", markercomparision[[m]][1] )
--#yMarker <- sub("_[^_]+$", "", markercomparision[[m]][2] )
--#colorMarker <- sub("_[^_]+$", "", markercomparision[[m]][3] )  
--# whith this strings, we match back in the meta or the multisegmented lines to plot additional stuff
-+#--------------------------------------
-+# Gating plotting functions
-+#--------------------------------------
- 
- 
- plot.scatter.gate <- function(indata, 
-@@ -2029,9 +2077,6 @@ plot.scatter.gate <- function(indata,
-   
- } # end function def  plot.scatter.gate
- 
--
--
--
- plot.scatter.gate.v2 <- function(indata, 
-                                  inx, 
-                                  iny, 
-@@ -2247,8 +2292,6 @@ plot.scatter.gate.v2 <- function(indata,
- } # end function def  plot.scatter.gate.v2
- 
- 
--
--
- plot.scatter.density<- function(indata, 
-                                 inx, 
-                                 iny, 
-@@ -2377,10 +2420,6 @@ plot.scatter.density<- function(indata,
- } # end function def  plot.scatter.density
- 
- 
--
--
--
--
- plot.scatter.density.v2 <- function(indata, 
-                                     inx, 
-                                     iny, 
-@@ -2736,7 +2775,9 @@ plot.scatter.density.v2 <- function(indata,
- 
- 
- 
--
-+#--------------------------------------
-+# Batch correction
-+#--------------------------------------
- 
- # ............. Batch alignement percentages are globally defined and called like that within the function ......................
- # if you decide to change these, you need to adjust them inside the function as well!!
-@@ -2751,7 +2792,9 @@ percentile_colors <- c('p60'='#a361c7','p80'='#5ba962','p85'='#c75a87','p90'='#a
- 
- 
- 
--
-+#--------------------------------------
-+# Gating utilities
-+#--------------------------------------
- 
- # ............. GATTING via OUTLIER Flags 1 or active data point 0 flag: ......................
- # The advantage of flagging outliers as 1 comes from my crstallography background, where reflections NOT participating in the model calculations are flagged with 1. 
-@@ -2805,12 +2848,6 @@ function.range.penalty <- function(i,j,k){
- 
- 
- 
--
--
--
--
--
--
- # this is the function to return the values of the multisegmented line looking along y!
- 
- multisegmentGATEline <- function(x.var, y.var){
-@@ -2836,9 +2873,9 @@ multisegmentGATEline <- function(x.var, y.var){
- 
- 
- 
-+#--------------------------------------
- # cluster collapse functions:
--
--
-+#--------------------------------------
- 
- 
- RMSD = function(x){
-@@ -2849,8 +2886,6 @@ MAE = function(x){
-   1/length(x) * sum(   abs( x - mean(x) )  )
- }
- 
--
--
- calc.homogeneity = function(m){
-   
-   # we first extract the currently present cluster numbers:
-@@ -2873,7 +2908,6 @@ calc.homogeneity = function(m){
-     
-     
-     
--    
-     #message(paste0("Cluster ", i, " RMSD: ", round( cluster.sum,3)  ))
-     
-     # we calculate RMSD of every marker, then sum up and add the RMSD-cluster-sum to the RMSD-subset-sum
-@@ -2893,7 +2927,10 @@ calc.homogeneity = function(m){
- sort_hclust <- function(...) as.hclust(dendsort(as.dendrogram(...)))
- 
- 
--# proximity index functions:
-+
-+#--------------------------------------
-+# Spatial proximity index functions:
-+#--------------------------------------
- extract.distance <- function(x=x,
-                              y=y,
-                              mask=mask){
-@@ -2911,7 +2948,9 @@ lookup.binary.mask <- function(x=x,
- }
- 
- 
--
-+#--------------------------------------
-+# Plotting and statistics utilities
-+#--------------------------------------
- # for plotting log scale, we define some major and minor breaks:
- breaks <- 10^(-10:10)
- minor_breaks <- rep(1:9, 21)*(10^rep(-10:10, each=9))
-@@ -2934,7 +2973,9 @@ sigStar.verticaloffset <- 0.1
- 
- 
- 
--
-+#--------------------------------------
-+# depreciated..
-+#--------------------------------------
- 
- make.autograph.adapted <- function (dat, x.axis, y.axis, colour.by = x.axis, y.axis.label = y.axis, 
-                                     grp.order = NULL, 
+-+## 1. Windows Preparation
+-+
+-+- **Enable Required Features:**
+-+  - Go to Windows Settings → System → Optional Features and ensure **WMIC** is installed.
+-+  - Go to "More Windows Features" and enable:
+-+    - `Virtual Machine Platform`
+-+    - `Windows Subsystem for Linux`
+-+
+-+- **Install Visual Studio Code (VS Code):**
+-+  - Download and install from [https://code.visualstudio.com/](https://code.visualstudio.com/).
+-+
+-+- **Install WSL and Ubuntu:**
+-+  - Open PowerShell as Administrator and run:
+-+    ```powershell
+-+    wsl --install
+-+    ```
+-+  - Follow prompts to download Ubuntu and create a user account (no spaces in username).
+-+
+-+- **Restart your PC.**
+-+
+-+## 2. VS Code & WSL Integration
+-+
+-+- **Install WSL Extension in VS Code:**
+-+  - Install [Remote - WSL](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-wsl).
+-+
+-+- **Connect to WSL:**
+-+  - Open VS Code, connect to WSL: Ubuntu.
+-+
+-+- **Set Up Project Directory:**
+-+  - In the bash terminal:
+-+    ```bash
+-+    mkdir projects
+-+    cd projects
+-+    ```
+-+  - Clone the Phenalyzer repo from GitHub:
+-+    ```bash
+-+    git clone https://github.com/mabar1/Phenalyzer
+-+    cd Phenalyzer
+-+    ```
+-+
+-+## 3. Install R 4.5 in Ubuntu
+-+
+-+- **Make Installer Executable:**
+-+  ```bash
+-+  chmod 777 r_installer.sh
+-+  ```
+-+- **Run the Installer:**
+-+  ```bash
+-+  ./r_installer.R
+-+  ```
+-+  - Enter your Ubuntu password as needed.
+-+  - Follow prompts (press Enter or type `y` as required).
+-+
+-+- **Verify R Installation:**
+-+  ```bash
+-+  which R
+-+  ```
+-+  - Should return `/usr/bin/R`.
+-+
+-+## 4. VS Code R Environment
+-+
+-+- **Install REditorSupport Extension in VS Code.**
+-+- **Restart VS Code.**
+-+
+-+- **Initialize R Terminal in VS Code:**
+-+  - Click the R terminal button (should start R 4.5).
+-+
+-+- **Install Language Server in R:**
+-+  ```r
+-+  install.packages("languageserver")
+-+  ```
+-+  - If prompted about unwritable directories, choose to use your personal library (e.g., `/home/maba/R/x86_64-pc-linux-gnu-library/4.5`).
+-+
+-+- **Restart VS Code.**
+-+
+-+## 5. Install radian (Improved R Console)
+-+
+-+- **Install pipx and radian:**
+-+  ```bash
+-+  sudo apt install pipx
+-+  pipx install radian
+-+  ```
+-+
+-+- **Install cmake for package dependencies:**
+-+  ```bash
+-+  sudo apt install cmake
+-+  ```
+-+
+-+- **Restart VS Code.**
+-+
+-+- **Verify radian Installation:**
+-+  ```bash
+-+  which radian
+-+  ```
+-+  - Should return `/home/maba/.local/bin/radian`.
+-+
+-+- **Configure VS Code to Use radian:**
+-+  - Open settings (`Ctrl+Shift+P` → "Preferences: Open Settings (UI)" or `Ctrl+,`).
+-+  - Search for `Rterm` and set **R > Rterm: Linux** to `/home/maba/.local/bin/radian`.
+-+  - Search for `radian` and enable **R: Bracketed Paste**.
+-+  - Close and restart VS Code.
+-+
+-+- **Check Radian in Terminal:**
+-+  - Open a new R terminal. The prompt should start with a blue `r$>`, indicating radian is active.
+-+
+-+## 6. Enable Plot Viewer
+-+
+-+- **In VS Code Settings:**
+-+  - Search for `r.plot.useHttpgd` and enable it.
+-+
+-+## 7. Linting Setup (Optional)
+-+
+-+- **Install remotes and lintr in R:**
+-+  ```r
+-+  install.packages("remotes")
+-+  remotes::install_github("r-lib/lintr")
+-+  ```
+-+
+-+- **Customize lintr (Optional):**
+-+  - In bash:
+-+    ```bash
+-+    cd ~
+-+    vi ./lintr
+-+    ```
+-+  - Paste the following (ensure the closing bracket is on the last line and there is a blank line at the end):
+-+    ```r
+-+    linters: with_defaults(
+-+      line_length_linter = NULL,
+-+      open_curly_linter = NULL,
+-+      commented_code_linter = NULL,
+-+      trailing_whitespace_linter = NULL)
+-+
+-+    ```
+-+  - In `vi`, press `Esc`, type `:wq` to save and exit.
+-+
+-+## 8. Install Phenalyzer Dependencies
+-+
+-+- **Restart VS Code.**
+-+- **Source the `environment_setup.R` script in your R terminal:**
+-+  ```r
+-+  source("environment_setup.R")
+-+  ```
+-+  - This will install all required packages for Phenalyzer. (This may take a while—make a coffee!)
+-+
+-+---
+-+
+-+**You are now ready to use Phenalyzer!**
+-\ No newline at end of file
+-diff --git a/diff.txt b/diff.txt
+-index 99531e8..ec17dd8 100644
+---- a/diff.txt
+-+++ b/diff.txt
+-@@ -1,1374 +0,0 @@
+--diff --git a/Phenalyzer_v2.R b/Phenalyzer_v2.R
+--index f04dbaa..153a89f 100644
+----- a/Phenalyzer_v2.R
+--+++ b/Phenalyzer_v2.R
+--@@ -156,9 +156,11 @@ whichSTAGE <- 0
+-- 
+-- if(whichSTAGE == 0){
+-- 
+---
+---# at start up, we get the working directoy,
+--+#--------------------------------------
+--+# Set Working Directory of the code
+-- # and source the setting.
+--+#--------------------------------------
+--+
+-- dirname(rstudioapi::getActiveDocumentContext()$path)            # Finds the directory where this script is located
+-- setwd(dirname(rstudioapi::getActiveDocumentContext()$path))     # Sets the working directory to where the script is located
+-- getwd()
+--@@ -167,23 +169,34 @@ PrimaryDirectory
+-- source("global_settings.R") 
+-- source("load_packages.R") # load all packages we need for the script to run
+-- # now that we loaded spectre, lets make sure the default functions get overwritten with the adapted functions
+---source("utils_v0.R") # we need this line here when we run STAGE 0 the first time.
+---
+---
+--+source(paste0("utils_v",utils_version,".R")) # we need this line here when we run STAGE 0 the first time.
+--+#--------------------------------------
+--+# Set Output Directory Tree
+--+#--------------------------------------
+-- date <- gsub('-','',strsplit(x = as.character( Sys.time() ), split = ' ')[[1]][1])
+--+setwd(PrimaryDirectory)
+--+dir.create("output")
+--+setwd("output")
+-- 
+--+dir.create(date)
+--+setwd(date)
+--+OutputDirectory <- getwd()
+--+
+--+dir.create("Data")
+--+setwd("Data")
+--+OutputDataDirectory <- getwd()
+-- 
+-- 
+--   
+---# 
+--+
+-- 
+-- if (!exists("how.often.ran.STAGE0")){
+---    #first time you run STAGE 0 create the counter
+---    how.often.ran.STAGE0<-0
+---    }else{
+---    # after first run, increase counter
+---    how.often.ran.STAGE0<-how.often.ran.STAGE0+1
+---    }
+--+  #first time you run STAGE 0 create the counter
+--+  how.often.ran.STAGE0<-0
+--+}else{
+--+  # after first run, increase counter
+--+  how.often.ran.STAGE0<-how.often.ran.STAGE0+1
+--+}
+-- 
+-- 
+-- # Load Metadata file 
+--@@ -198,15 +211,77 @@ if(!any(grepl("\\.tsv$", sample.meta$tsv.file.name))){
+-- 
+-- 
+-- 
+--+
+--+
+--+
+--+
+--+
+--+
+--+
+--+
+--+
+--+
+--+
+--+
+--+
+--+
+-- if(rebuild.cell.data.anew == 1){
+-- 
+-- 
+--+#--------------------------------------
+--+# Set Input Directory
+--+# if we rebuild anew, the input directory is the QuPath_tsv_inputs folder
+--+#--------------------------------------
+--+setwd(PrimaryDirectory)
+--+setwd(paste0("QuPath_tsv_inputs/")) # we hop into Data right way: in here are all tsv we will load
+--+InputDirectory <- getwd()
+--+InputDirectory
+--+
+--+
+--+
+--+#--------------------------------------
+--+# load tsv files from QuPath Cellpose Segmentation
+--+#--------------------------------------
+--+setwd(InputDirectory)
+--+# Merge all tsv files in all.tsv.files
+--+all.tsv.files <- list.files(pattern = "\\.tsv$") 
+--+# Read all files into a list of data frames
+--+tsv_list <- lapply(seq_along(all.tsv.files), function(i) {
+--+  df <- readr::read_tsv(all.tsv.files[i])
+--+  df <- tibble::add_column(df, "tsv file" = all.tsv.files[i], .after = 2)
+--+  df <- df %>% dplyr::rename_all(~ make.names(.))
+--+  df
+--+})
+--+
+--+# Generalized code to compare all n list entries and print which names are different between any of the list entries
+--+all_names <- lapply(tsv_list, names)
+--+unique_names <- unique(unlist(all_names))
+--+for (i in seq_along(tsv_list)) {
+--+  missing_in_i <- setdiff(unique_names, names(tsv_list[[i]]))
+--+  if (length(missing_in_i) > 0) {
+--+    cat(sprintf("tsv_list[[%d]] (%s) is missing columns: %s\n", 
+--+                i, all.tsv.files[i], paste(missing_in_i, collapse = ", ")))
+--+  } else {
+--+    cat(sprintf("tsv_list[[%d]] (%s) has all columns present.\n", 
+--+                i, all.tsv.files[i]))
+--+  }
+--+}
+--+
+--+
+--+# Append all data frames row-wise
+--+PCF_data <- dplyr::bind_rows(tsv_list)
+--+rm(tsv_list)
+--+
+-- 
+-- #--------------------------------------
+-- # Prepare the marker names  that we process
+-- #--------------------------------------
+---# the code in the stages is still using the old column names.
+---# lets assemble the markers we process here and pass the old object name into the code:
+--+# before we even do anything, 
+--+# lets make sure there is no typo in the Markers2Process vector:
+--+
+--+# lets assemble the column names of the markers we will process.
+--+# we do not just asseble the columns based on Markers2Process, but
+--+# we attempt to pull these assebled columns from PCF_data...
+-- cellular.cols <- names(
+-- PCF_data %>%
+--   dplyr::select(
+--@@ -222,8 +297,7 @@ PCF_data %>%
+--   )
+-- )
+-- 
+---
+---# before we even do anything, lets make sure there is no typo in the Markers2Process vector:
+--+# ...and then can check if all markers are present in the data:
+-- if(length(Markers2Process) != length(cellular.cols)){
+--   cat(paste0("\n\n\n----------------------------------- \n ERROR in STAGE0 start-up   \n Not all markers to process further were found in your data \n  Check your Markers2Process vector and make sure it matches the marker spelling \n -> Seems you misspelled ",length(Markers2Process)-length(cellular.cols)," of the following entries? \n")) 
+--   temp.string <- names(
+--@@ -262,54 +336,10 @@ if(length(Markers2Process) != length(cellular.cols)){
+-- }
+-- 
+-- 
+---
+---
+---
+---#--------------------------------------
+---# Set InputDirectory
+---# load tsv files from QuPath Cellpose Segmentation
+---#--------------------------------------
+---setwd(PrimaryDirectory)
+---setwd(paste0("QuPath_tsv_inputs/")) # we hop into Data right way: in here are all tsv we will load
+---InputDirectory <- getwd()
+---InputDirectory
+---all.tsv.files <- list.files(pattern = "\\.tsv$") 
+---
+---
+---# Merge all tsv files in all.tsv.files
+---# Read all files into a list of data frames
+---tsv_list <- lapply(seq_along(all.tsv.files), function(i) {
+---  df <- readr::read_tsv(all.tsv.files[i])
+---  df <- tibble::add_column(df, "tsv file" = all.tsv.files[i], .after = 2)
+---  df <- df %>% dplyr::rename_all(~ make.names(.))
+---  df
+---})
+---
+---
+---# Generalized code to compare all n list entries and print which names are different between any of the list entries
+---all_names <- lapply(tsv_list, names)
+---unique_names <- unique(unlist(all_names))
+---for (i in seq_along(tsv_list)) {
+---  missing_in_i <- setdiff(unique_names, names(tsv_list[[i]]))
+---  if (length(missing_in_i) > 0) {
+---    cat(sprintf("tsv_list[[%d]] (%s) is missing columns: %s\n", 
+---                i, all.tsv.files[i], paste(missing_in_i, collapse = ", ")))
+---  } else {
+---    cat(sprintf("tsv_list[[%d]] (%s) has all columns present.\n", 
+---                i, all.tsv.files[i]))
+---  }
+---}
+---
+---
+---# Append all data frames row-wise
+---PCF_data <- dplyr::bind_rows(tsv_list)
+---rm(tsv_list)
+---
+---
+---
+-- #--------------------------------------
+-- # Clear up PCF_data before proceeding
+---# the cellpose code is heavily adapted, so things in there need clean up:
+--+# the qupath code to run CellPose is heavily adapted
+--+# so measurement export from qupath needs clean up:
+-- #--------------------------------------
+-- 
+-- # 1) due to assembling the cells manually, TMA.column is empty,
+--@@ -319,11 +349,11 @@ PCF_data <- PCF_data %>%
+--   dplyr::select(-TMA.core) %>%
+--   dplyr::rename(TMA.core= Name)
+-- 
+---# 2) when assembling the cells, we also added cell membrane objects without nucleus
+---# in mucosa for example, you cut a lot of cells without nuclei, but we want them nevertheless.
+---# if you do NOT do a obeject classification in QuPath, Classification column is populated with 
+---# exactly this information: "nucleated profile" and "anucleated profile". 
+---# if you DO classify the object, this tag is being overwritten with your classes.
+--+# 2) when assembling the cells, we also added non-nucleated cells
+--+# if you do NOT do a object classification in QuPath, 
+--+# Classification column is populated with exactly this information:
+--+# "nucleated profile" and "anucleated profile". 
+--+# if you DO classify the object, these tags are overwritten with your classes.
+-- # but dont worry, we bring the nucleation status back by checking the intensities of Cytoplasm:
+-- # anucleated profiles have nuc and cyto the same polygon, so Cytoplasm becomes NA in these cells:
+-- 
+--@@ -332,7 +362,7 @@ if ("Classification" %in% names(PCF_data)) {
+--   unique_vals <- unique(na.omit(PCF_data$Classification))
+--   allowed_vals <- c("nucleated profile", "anucleated profile")
+--   if (all(unique_vals %in% allowed_vals) && length(unique_vals) <= 2) {
+---    # Only allowed values present, just rename
+--+    # No classification ran, profile annotations are correct:
+--     PCF_data <- PCF_data %>%
+--       dplyr::rename(Object.cross.section = Classification)
+--   } else {
+--@@ -363,25 +393,6 @@ PCF_data <- PCF_data[!apply(PCF_data[, cellular.cols], 1, function(row) all(is.n
+-- }
+-- rm(cells_with_all_na)
+-- 
+---
+---### Create output directory
+---setwd(PrimaryDirectory)
+---dir.create(date)
+---setwd(date)
+---OutputDirectory <- getwd()
+---
+---
+---dir.create("Data")
+---setwd("Data")
+---OutputDataDirectory <- getwd()
+---
+---setwd(OutputDirectory)
+---dir.create("Plots")
+---OutputPlotDirectory <- getwd()
+---
+---
+---
+---
+-- #--------------------------------------
+-- # Mapping Metadata to the cellular data
+-- #--------------------------------------
+--@@ -389,7 +400,7 @@ OutputPlotDirectory <- getwd()
+-- # check if any of the tsv files has NA in the TMA.core column:
+-- if(any(is.na(PCF_data$TMA.core))){
+--   message("TMA.core column in PCF_data has NA values")
+---  message("-> Assuming there was not TMA present and attempt to map metadata by tsv file names.")
+--+  message("-> Assuming there was no TMA present and mapping metadata by tsv file names:")
+-- 
+--   # remove the TMA.core column from sample.meta. We got this column already in PCFdata and would not be able to map 
+--   #if more than one column name are shared among the two files:
+--@@ -399,12 +410,10 @@ if(any(is.na(PCF_data$TMA.core))){
+--   PCF_data <- do.add.cols(as.data.frame(PCF_data), base.col = 'tsv.file', add.dat = sample.meta, add.by = 'tsv.file.name')
+--   message("Mapping metadata to the cellular data complete")
+-- 
+---
+---
+---
+-- }else {
+-- 
+--   # normal case: we have TMA.core column in PCF_data
+--+  message("-> TMA core IDs found, mapping each core:")
+--   # sample.meta tsv.file.name column is already set, so is PCF_data$tsv.file
+-- 
+--   # We need a unique TMA - core ID to tell the cores apart:
+--@@ -444,7 +453,7 @@ if(any(is.na(PCF_data$TMA.core))){
+-- 
+-- } # end mapping: PCF_data$TMA.core was there.
+-- 
+---# now that we mapped batch numbers, we can clear entire cores:
+--+# now that we mapped batch numbers, we could clear entire cores:
+-- #e.g. PCF_data <- PCF_data[ grep("20250228_27X_bleaching trial (control).tsv_B-2",  PCF_data$TMA.ID_core, invert = TRUE) , ]
+-- 
+-- 
+--@@ -457,63 +466,22 @@ rm(PCF_data)
+-- 
+-- 
+-- 
+---####################### all settings done. lets do some stuff needed for all stages ##########################
+---        
+---       # once we cleared out, store all TMA names away for the upcoming plotting machines
+---all_images  <- unique(cell.dat$Image)
+---amount.of.TMAs  <- length(all_images)
+---
+---all_cores  <- unique(cell.dat$TMA.ID_core)
+---amount.of.cores  <- length(all_cores)
+---
+---
+---        
+---        
+---        
+---# we push the proper column names into the markercomparision list:
+---# now there is a chance you dont want to transform, in that case these columns might not even exist:
+---if (transform.rawdata == T) {
+---  markercomparision <- lapply(scatter.plots, function(x) ifelse( is.na(x), NA,
+---        paste0(
+---          x,
+---          qupath.separator,
+---          cellular.segment.compartment,
+---          qupath.separator,
+---          cellular.segment.readout,
+---          "_t",asinh.cofactor
+---        )
+---      )
+---  )
+---  # markercomparision <- lapply(scatter.plots, function(x) ifelse(is.na(x), NA, paste0(x, qupath.separator,cellular.segment.readout,"_t",asinh.cofactor)  ))
+---} else {
+---  # in this case the transform flag does not exist but only the raw columns:
+---  markercomparision <- lapply(
+---    scatter.plots,
+---    function(x)
+---      ifelse(
+---        is.na(x),
+---        NA,
+---        paste0(
+---          x,
+---          qupath.separator,
+---          cellular.segment.compartment,
+---          qupath.separator,
+---          cellular.segment.readout
+---        )
+---      )
+---  )
+---}
+---
+---        
+--+# all settings done. 
+--+# initialize following stage 0 varibles :
+--+# all_images, amount.of.TMAs, all_cores, amount.of.cores, markercomparision
+--+list2env( initialize_stage_0_variables(
+--+  cell.dat = cell.dat,
+--+  scatter.plots = scatter.plots,
+--+  transform.rawdata = transform.rawdata,
+--+  qupath.separator = qupath.separator,
+--+  cellular.segment.compartment = cellular.segment.compartment,
+--+  cellular.segment.readout = cellular.segment.readout,
+--+  asinh.cofactor = asinh.cofactor
+--+), envir = .GlobalEnv)
+-- 
+---        
+-- 
+---        
+---        
+---  
+-- 
+-- 
+---              
+-- ###### Start spill-over correction routine ######         
+-- if(correct.spill.over ==1){
+--           
+--@@ -1489,132 +1457,115 @@ testcelldata %>% rowwise() %>% mutate(
+-- 
+--  
+-- }#end batch normalization routine
+---      
+--- 
+---      
+---      
+---      
+---      
+---      
+---      
+--+     
+-- } # protect from running in first pass      
+--       
+---#end default stage 1: load data from first script and generate cell.dat anew     
+---}else{ 
+---# alternate 0 and we just need to read in the already written cell.dat file and its friends:
+---          
+---          
+---          ### Set PrimaryDirectory
+---          
+---          dirname(rstudioapi::getActiveDocumentContext()$path)            # Finds the directory where this script is located
+---          setwd(dirname(rstudioapi::getActiveDocumentContext()$path))     # Sets the working directory to where the script is located
+---          getwd()
+---          PrimaryDirectory <- getwd()
+---          PrimaryDirectory
+---          
+---          ### Set InputDirectory
+---          
+---          # Now you want to re-load the files, switch the input directory temporally to:
+---          # of course you have to 
+---          setwd(PrimaryDirectory)
+---          setwd(paste0("Output 2 - cellular analysis/",date.of.clustered.gated.subsets,"/Data/") )
+---          InputDirectory <- getwd()
+---          InputDirectory
+---          
+---          file_loading.Lyrics <-  paste("\n\n\n")
+---          file_loading.Lyrics <-  paste(file_loading.Lyrics, "_____________________________________________________________________________\n\n")
+---          
+---          
+---          # now there is a chance that you want to proceed with STAGE 2. in that case you need one of these two guys:
+---          all.STAGE0.cell.dats <- list.files(pattern = '.qs')
+---          
+---          
+---           # as you can see, we load both cell.dats into the re-running code. 
+---          # We decide which one will enter into STAGE1 via the calculate.scaling.factors==1 condition.
+---          if("scaled.cell.dat.qs" %in% all.STAGE0.cell.dats){ scaled.cell.dat <- qread("scaled.cell.dat.qs")  
+---          file_loading.Lyrics <-  paste(file_loading.Lyrics, "   Loaded scaled.cell.dat -> proceed with STAGE 1 and calculate.scaling.factors=1\n",   sep="")}
+---          
+---          if("unscaled.cell.dat.qs" %in% all.STAGE0.cell.dats){ cell.dat <- qread("unscaled.cell.dat.qs")  
+---          file_loading.Lyrics <-  paste(file_loading.Lyrics, "   Loaded (un-scaled) cell.dat -> proceed with STAGE 1 and calculate.scaling.factors=0\n",   sep="")}
+---          
+---          
+---          
+---          
+---          if("clustered.gated.subsets.qs" %in% all.STAGE0.cell.dats){ clustered.gated.subsets <- qread("clustered.gated.subsets.qs")  
+---          file_loading.Lyrics <-  paste(file_loading.Lyrics, "   Loaded clustered.gated.subsets -> proceed with STAGE 3\n",   sep="")
+---          }
+---          
+---         
+---          
+---          # currently, STAGE 3 only stores away the ready-to-go gated.cell.dat: gated, annotated, collapsed:
+---          all.STAGE3.files <- list.files(pattern = '.csv')
+---          
+---          if("all.cells.csv" %in% all.STAGE3.files){ all.cells  <- fread("all.cells.csv")  # this is not STAGE 3 produced, but we need it for late stages
+---          file_loading.Lyrics <-  paste(file_loading.Lyrics, "   Loaded all.cells -> proceed with STAGE 4+\n",   sep="")}
+---          
+---          if("gated.cell.dat.csv" %in% all.STAGE3.files){ gated.cell.dat <- fread("gated.cell.dat.csv")  
+---          file_loading.Lyrics <-  paste(file_loading.Lyrics, "   Loaded gated.cell.dat -> proceed with STAGE 4+\n",   sep="")}
+---          
+---          if("masked.gated.cell.dat.csv" %in% all.STAGE3.files){ masked.gated.cell.dat <- fread("masked.gated.cell.dat.csv")  
+---          file_loading.Lyrics <-  paste(file_loading.Lyrics, "   Loaded masked.gated.cell.dat -> proceed with STAGE 5+\n",   sep="")}       
+---          
+---          
+---          
+---          file_loading.Lyrics <-  paste(file_loading.Lyrics, "_____________________________________________________________________________\n\n")
+---          message("Loading backed up cellular data file(s) complete. Check the files and proceed accordingly:")
+---          cat( file_loading.Lyrics )
+---          
+---          # now that cell.dat is loaded, switch back to default input directory:      
+---          ### Set InputDirectory 
+---          
+---          setwd(PrimaryDirectory)
+---          setwd(paste0("Output 1 - add masks/",date.of.spatial.dat,"/Data")) # we hop into Data right way: in here is spatial.dat.qs and cell.dat.csv and area.totals.csv
+---          InputDirectory <- getwd()
+---          InputDirectory
+---          
+---          
+---          ### Create output directory
+---          
+---          setwd(PrimaryDirectory)
+---          dir.create("Output 2 - cellular analysis")
+---          setwd("Output 2 - cellular analysis")
+---          dir.create(date)
+---          setwd(date)
+---          OutputDirectory <- getwd()
+---          OutputDirectory
+---          
+---          dir.create('Data')
+---          setwd('Data')
+---          OutputDataDirectory <- getwd()
+---          
+---  
+--+    
+--+} #end default stage 1: load data from first script and generate cell.dat anew 
+--+
+--+if(rebuild.cell.data.anew == 0){
+--+
+--+  #--------------------------------------
+--+  # Set Input Directory
+--+  # if we rebuild anew, the input directory is the QuPath_tsv_inputs folder
+--+  #--------------------------------------
+--+
+--+  setwd(PrimaryDirectory)
+--+  setwd(paste0("output/",day.to.reload.data,"/Data/") )
+--+  InputDirectory <- getwd()
+--+
+--+
+--+  file_loading.Lyrics <-  paste("\n\n\n")
+--+  file_loading.Lyrics <-  paste(file_loading.Lyrics, "_____________________________________________________________________________\n\n")
+--+
+--+  # now there is a chance that you want to proceed with STAGE 2,
+--+  # so lets load all files in Data directory:
+--+  all.STAGE0.cell.dats <- list.files(pattern = '.qs')
+--+
+--+  # as you can see, we load both cell.dats into the re-running code. 
+--+  # We decide which one will enter into STAGE1 via the calculate.scaling.factors==1 condition.
+--+  if("scaled.cell.dat.qs" %in% all.STAGE0.cell.dats){ scaled.cell.dat <- qread("scaled.cell.dat.qs")  
+--+  file_loading.Lyrics <-  paste(file_loading.Lyrics, "   Loaded scaled.cell.dat -> proceed with STAGE 1 and calculate.scaling.factors=1\n",   sep="")}
+--+
+--+  if("unscaled.cell.dat.qs" %in% all.STAGE0.cell.dats){ cell.dat <- qread("unscaled.cell.dat.qs")  
+--+  file_loading.Lyrics <-  paste(file_loading.Lyrics, "   Loaded (un-scaled) cell.dat -> proceed with STAGE 1 and calculate.scaling.factors=0\n",   sep="")}
+--+
+--+  if("clustered.gated.subsets.qs" %in% all.STAGE0.cell.dats){ clustered.gated.subsets <- qread("clustered.gated.subsets.qs")  
+--+  file_loading.Lyrics <-  paste(file_loading.Lyrics, "   Loaded clustered.gated.subsets -> proceed with STAGE 3\n",   sep="")  }
+--+
+--+  # gated.cell.dat from STAGE 3+ is ready-to-go: it is
+--+  # gated, cluster collapsed and annotated, might contain masks
+--+  all.STAGE3.files <- list.files(pattern = '.csv')
+--+
+--+  if("all.cells.csv" %in% all.STAGE3.files){ all.cells  <- fread("all.cells.csv")  # this is not STAGE 3 produced, but we need it for late stages
+--+  file_loading.Lyrics <-  paste(file_loading.Lyrics, "   Loaded all.cells -> proceed with STAGE 4+\n",   sep="")}
+--+
+--+  if("gated.cell.dat.csv" %in% all.STAGE3.files){ gated.cell.dat <- fread("gated.cell.dat.csv")  
+--+  file_loading.Lyrics <-  paste(file_loading.Lyrics, "   Loaded gated.cell.dat -> proceed with STAGE 4+\n",   sep="")}
+--+
+--+  if("masked.gated.cell.dat.csv" %in% all.STAGE3.files){ masked.gated.cell.dat <- fread("masked.gated.cell.dat.csv")  
+--+  file_loading.Lyrics <-  paste(file_loading.Lyrics, "   Loaded masked.gated.cell.dat -> proceed with STAGE 5+\n",   sep="")}       
+--+
+--+  file_loading.Lyrics <-  paste(file_loading.Lyrics, "_____________________________________________________________________________\n\n")
+--+  message("Loading backed up cellular data file(s) complete. Check the files and proceed accordingly:")
+--+  cat( file_loading.Lyrics )
+--+
+--+  # now that cell.dat is loaded, switch back to default input directory:      
+--+  ### Set InputDirectory 
+--+  setwd(PrimaryDirectory)
+--+  setwd(paste0("QuPath_tsv_inputs/"))
+--+  InputDirectory <- getwd()
+--           
+-- ###################### COPY-PASTE VARIABLES IF YOU DO NOT GENERATE CELL.DAT ANEW ######################
+--                   
+---# in this case we do not end with cell.dat, but with gated.cell.dat.
+---# but we still need to know some variables that we would skip in STAGE2 and in the end of STAGE 3. 
+---# so lets load them separately:
+---if(exists("cell.dat")){            
+---  cellular.cols <- names(cell.dat %>% dplyr:: select(starts_with( paste0(Markers2Process, "_") )))
+---  if(length(Markers2Process) != length(cellular.cols) ){
+---    print("Check the marker names to process and the cell.dat columns. They do not match.")
+---    print("I did not find all of them in cell.dat.")
+---    print( paste0("Seems you misspelled ",length(Markers2Process)-length(cellular.cols)," of the following entries?") )
+---    print( 
+---      as.matrix( names(cell.dat %>% 
+---                         dplyr:: select(-starts_with( paste0(Markers2Process, "_") )) %>% 
+---                         # lets remove all metadata columns we just added
+---                         dplyr:: select(-starts_with( names(sample.meta) ))  %>%
+---                         # lets also remove the spatial.dat columns
+---                         dplyr:: select(-starts_with( c("ID", "x","y","Area") )) 
+---      ))
+---    )
+--+# we still need to know some variables that we would skip in STAGE2 and in the end of STAGE 3.
+--+# add them manually!! 
+--+if(exists("cell.dat")){  
+--+  # now, assuming that gated.cell.dat is a child of cell.dat in that folder:
+--+  # before doing anything, lets check if the cellular.cols vector 
+--+  # is present in cell.dat:
+--+
+--+  # we do not care for typos as we do if we rebuild cell.dat from scratch, but simply 
+--+  # test if 
+--+
+--+  if(!all(paste0(
+--+    Markers2Process,
+--+    qupath.separator,
+--+    cellular.segment.compartment,
+--+    qupath.separator,
+--+    cellular.segment.readout ) %in% names(cell.dat)) ){
+--+
+--+    cat("\n\n\n----------------------------------- \n ERROR in STAGE 0 initialization.   \n 
+--+      The loaded cell.dat does not contain all markers to process \n  
+--+      Please check the Markers2Process vector and the cell.dat columns \n 
+--+      -> You are likely using an outdated cellular column list or cell.dat \n-----------------------------------\n\n") 
+--+    stop()   
+--+
+--     
+---    stop()
+---  }
+---  
+---  
+---}# END load cellular columns from cell.dat
+--+  } else {
+--+
+--+    cellular.cols <- paste0(
+--+    Markers2Process,
+--+    qupath.separator,
+--+    cellular.segment.compartment,
+--+    qupath.separator,
+--+    cellular.segment.readout )
+--+
+--+    # all settings done. 
+--+    # initialize following stage 0 varibles :
+--+    # all_images, amount.of.TMAs, all_cores, amount.of.cores, markercomparision
+--+    list2env( initialize_stage_0_variables(
+--+      cell.dat = cell.dat,
+--+      scatter.plots = scatter.plots,
+--+      transform.rawdata = transform.rawdata,
+--+      qupath.separator = qupath.separator,
+--+      cellular.segment.compartment = cellular.segment.compartment,
+--+      cellular.segment.readout = cellular.segment.readout,
+--+      asinh.cofactor = asinh.cofactor
+--+    ), envir = .GlobalEnv)
+--+
+--+  }# end check if all markers are present in cell.dat
+--+}# END check cellular columns from cell.dat
+--           
+-- # STAGE 2 did the gating and dropped a list of lists, which tells us the amount of GATE subsets we had initially gated.
+-- # Watch out, dont gated.cell.dat$GATEsubset as a pointer, you might have deleted in there the trashbin gate already
+--@@ -1867,7 +1818,7 @@ cat("\n\n\n----------------------------------- \n End of STAGE 0. \n I did not f
+-- # yes, we source that everytime anew, just in case we are fiddling in there I wanna be sure R loads the right functions
+-- if(whichSTAGE > 0){
+--   setwd(PrimaryDirectory)
+---  source("utils_v0.R") 
+--+  source(paste0("utils_v",utils_version,".R"))
+-- }
+-- 
+-- if(whichSTAGE == 1){
+--@@ -1877,7 +1828,7 @@ if(whichSTAGE == 1){
+--   
+-- # in case we scaled, we will store away cell.dat and replace that object with scaled.cell.dat. 
+-- if(calculate.scaling.factors==1){
+---  # this is nuts, we gonna just override now the raw data:
+--+  # override now the raw data:
+--   cell.dat <- scaled.cell.dat
+--   message("\n\n\n################################################\n# Scaled raw data are being used from here on! #\n################################################")
+-- }
+--@@ -1910,133 +1861,152 @@ cell.dat$outside.area <-mapply(function.range.penalty,i=cell.dat$Cell..Area.µm.
+-- 
+-- 
+--       
+---
+---################# Flag gated cells #################
+--+#------------------------------
+--+# Gating cells by flagging:
+--+# -> Transform marker signals
+--+#------------------------------
+-- 
+-- # gating is done either on raw or transformed data,
+-- # depending on whether transform.data is TRUE or FALSE
+-- # if TRUE, we need to transform the data now using do.data.normalization:
+-- if(transform.rawdata == TRUE){
+---         cell.dat <-  do.data.normalization(dat=cell.dat, 
+---                                           use.cols=cellular.cols, 
+---                                           # Transform
+---                                           do.transform = transform.rawdata,
+---                                           cofactor = asinh.cofactor,
+---                                           # min-max normalize?
+---                                           do.minmax = FALSE,
+---                                           new.min = min.norm, 
+---                                           new.max = max.norm,
+---                                           # z-score normalize?
+---                                           do.zscore = FALSE
+---                                           ) 
+---
+---
+---
+---  
+---}# end transform.data == TRUE
+---
+---
+---
+---
+---
+--+  cell.dat <- do.data.normalization(
+--+    dat = cell.dat,
+--+    use.cols = cellular.cols,
+--+    # Transform
+--+    do.transform = transform.rawdata,
+--+    cofactor = asinh.cofactor,
+--+    # min-max normalize?
+--+    do.minmax = FALSE,
+--+    new.min = min.norm,
+--+    new.max = max.norm,
+--+    # z-score normalize?
+--+    do.zscore = FALSE
+--+  )
+--+} # end transform.data == TRUE
+-- 
+-- 
+-- 
+---    
+---      
+---# as of v0.4 we do hierarchical gating and clustering, so we need some more gates, and we gonna do that now automatically via loop:
+---# this idea is brought back from shinyIMC but is even more generalized here since we need boolean AND, which requires 2 gate lines on the plot
+--+#------------------------------
+--+# Gating cells by flagging
+--+# -> Threshold gates supplied in the metadata file
+--+#------------------------------
+-- 
+---# for the upcoming plotting, we got a function that will check if xMarker or yMarker is part of gate_affected.markers
+--+# the plotting engine will will check if the marker on x/y axis is used as gate
+--+# if so, it will add the gate line in the plot
+--+# we will therefore collect all markers that are affected by a gate line and store them in gate_affected.markers
+-- gate.col.expr <- c(".highpass", ".lowpass")   
+-- threshold.gates <- names(cell.dat)[ grep( paste(gate.col.expr, collapse="|")   , colnames(cell.dat) ) ]
+---# this pulled as well the area.highpass and area.lowpass columns, so drop these:
+--+# this pulled any gate threshold, but also the area.highpass and area.lowpass columns, so drop these:
+-- threshold.gates <- grep("area.", threshold.gates, invert=TRUE, value = TRUE)   
+---# if you re-run stage 1, you also pull out the already set flag columns, and you need to remove them as well:
+--+# if you re-run stage 1, you also pull out the already set flag columns
+--+# remove them as well:
+-- threshold.gates <- grep("outside.", threshold.gates, invert=TRUE, value = TRUE) 
+-- 
+--+# we prepare the gate_affected.markers vector either way:.after# for plotting, we need to know the channel AB affected by a gate:
+--+gate_affected.markers <-    sub(".[^.]+$", "", threshold.gates ) # character 0 if no threshold.
+--+
+--+# if you do not supply and thresholdgates (yet), gate_affected.markers stays an empty character vector for now and we skip the upcoming part: 
+--+if (!identical(threshold.gates, character(0))) {
+--+
+--+  #------------------------------
+--+  # Flagging cells with threshold gates
+--+  #------------------------------
+--+
+--+  for (g in threshold.gates) {
+--+
+--+    # HIGH-PASS GATE FLAGGING
+--+    if (grepl(".highpass", g)) {
+--+      # do not chop off the marker and then grep it from cell.dat!
+--+      # you risk to fish more than one marker: CD3 grep will return CD3, CD31, CD321 and so on...
+--+      # just remove the last dot and assemble the column name:
+--+
+--+      temp.gated.marker <- lapply(
+--+        sub(".[^.]+$", "", g),
+--+        function(x) ifelse(
+--+          transform.rawdata == TRUE,
+--+          paste0(
+--+            x,
+--+            qupath.separator,
+--+            cellular.segment.compartment,
+--+            qupath.separator,
+--+            cellular.segment.readout,
+--+            "_t", asinh.cofactor
+--+          ),
+--+          paste0(
+--+            x,
+--+            qupath.separator,
+--+            cellular.segment.compartment,
+--+            qupath.separator,
+--+            cellular.segment.readout
+--+          )
+--+        )
+--+      )
+--+      # we initialized it already, push the markes now in:
+--+      gate_affected.markers <- c(gate_affected.markers, temp.gated.marker)
+--+
+--+      # watch out, this column name structure is afterwards used to pull the flags, such as in "outside.",yMarker,".highpass". Caution if you wanna change that...
+--+      cell.dat[, paste0("outside.", g)] <- mapply(
+--+        function.lower.penalty,
+--+        i = cell.dat[[temp.gated.marker]],
+--+        j = as.numeric(cell.dat[[g]])
+--+      )
+-- 
+---# for plotting, we need to know the channel AB affected by a gate:
+---gate_affected.markers <-    sub(".[^.]+$", "", threshold.gates ) 
+---
+---# if you do not supply and thresholdgates (yet), gate_affected.markers stays an empty character vector and we skip the upcoming part: 
+---if(  !identical(gate_affected.markers, character(0))  ){
+---
+---
+---
+---# next line is a unreadable.
+---# we gonna pull multiple patterns at once, so we need to collapse the AB names first, and to each we pasted an underscore before grepping. 
+---# This makes sure we dont pull CD3xx and CD3xx if we just wanted CD3, for example
+---gate_affected.markers <-names(cell.dat)[ grep(  paste( paste0(gate_affected.markers,"_")   , collapse="|")   , colnames(cell.dat))]  
+---
+--+      passed.cells <- table(cell.dat[[paste0("outside.", g)]])[1]
+--+      message(
+--+        g, " GATE: ", passed.cells, " cells (",
+--+        round(passed.cells / nrow(cell.dat) * 100, 2),
+--+        "%) passed high-pass gate of ", temp.gated.marker
+--+      )
+-- 
+---# next line is depreciated since we use .highpass with a dot separated
+---# and then drop the gate.col.expr-containing col names again:
+---#gate_affected.markers <- grep( paste(gate.col.expr, collapse="|") , gate_affected.markers, invert=TRUE, value = TRUE) 
+--+    } # end high-pass flagging
+--+
+--+    # LOW-PASS GATE FLAGGING
+--+    if (grepl(".lowpass", g)) {
+--+
+--+      temp.gated.marker <- lapply(
+--+        sub(".[^.]+$", "", g),
+--+        function(x) ifelse(
+--+          transform.rawdata == TRUE,
+--+          paste0(
+--+            x,
+--+            qupath.separator,
+--+            cellular.segment.compartment,
+--+            qupath.separator,
+--+            cellular.segment.readout,
+--+            "_t", asinh.cofactor
+--+          ),
+--+          paste0(
+--+            x,
+--+            qupath.separator,
+--+            cellular.segment.compartment,
+--+            qupath.separator,
+--+            cellular.segment.readout
+--+          )
+--+        )
+--+      )
+-- 
+--+      # we initialized it already, push the markes now in:
+--+      gate_affected.markers <- c(gate_affected.markers, temp.gated.marker)
+-- 
+---     
+--+      cell.dat[, paste0("outside.", g)] <- mapply(
+--+        function.upper.penalty,
+--+        i = cell.dat[[temp.gated.marker]],
+--+        j = as.numeric(cell.dat[[g]])
+--+      )
+-- 
+--+      passed.cells <- table(cell.dat[[paste0("outside.", g)]])[1]
+--+      message(
+--+        g, " GATE: ", passed.cells, " cells (",
+--+        round(passed.cells / nrow(cell.dat) * 100, 2),
+--+        "%) passed low-pass gate of ", temp.gated.marker
+--+      )
+-- 
+--+    } # end low-pass flagging
+-- 
+--- 
+---## ........................ THRESHOLD GATE FLAGGING   ........................  
+---# this idea is brought back from shinyIMC and adapted for automatic gating:
+---for(g in threshold.gates){
+---  
+---  #HIGH-PASS GATE FLAGGING
+---  if(  grepl(".highpass", g)   ){
+---  
+---  # we need to pull the marker col name first.
+---  #strip off the gate tag
+---  temp.gated.marker <-  sub(".[^.]+$", "", g )
+---  # pull all cols with that AB. same game as before: paste0 the underscore before grepping pulls only one marker:
+---  temp.gated.marker <- names(cell.dat)[ grep( paste0( temp.gated.marker  ,"_" )  , colnames(cell.dat))]
+---  
+---  
+---  # using a . for all high/lowpasses in the metadata makes the next line depreciated
+---  # drop the gate col name again. 
+---  #temp.gated.marker <- grep("pass", temp.gated.marker, invert=TRUE, value = TRUE) 
+---  
+---  
+---  # watch out, this column name structure is afterwards used to pull the flags, such as in "outside.",yMarker,".highpass". Caution if you wanna change that...
+---  cell.dat[, paste0("outside.", g) ]  <- mapply(function.lower.penalty,i=cell.dat[[temp.gated.marker]], j= as.numeric(cell.dat[[ g ]])  )
+---  
+---  
+---  passed.cells <- table(cell.dat[[ paste0("outside.", g) ]])[1]
+---  message(g, " GATE: ", passed.cells,    " cells (", round( passed.cells/nrow(cell.dat)*100,2)   ,"%) passed high-pass gate of ", temp.gated.marker    )
+---  
+---} # end high-pass flagging   
+---  
+---  
+---  #LOW-PASS GATE FLAGGING
+---  if(  grepl(".lowpass", g)   ){
+---    
+---    # we need to pull the marker col name first.
+---    #strip off the gate tag
+---    temp.gated.marker <-  sub(".[^.]+$", "", g )
+---    # pull all cols with that AB:
+---    temp.gated.marker <- names(cell.dat)[ grep( paste0( temp.gated.marker  ,"_" )  , colnames(cell.dat))]
+---    
+---    # again, using a . for all high/lowpasses in the metadata makes the next line depreciated
+---    # drop the gate col name again unnecessary:
+---    #temp.gated.marker <- grep("pass", temp.gated.marker, invert=TRUE, value = TRUE) 
+---    
+---    
+---    cell.dat[, paste0("outside.", g) ]  <- mapply(function.upper.penalty,i=cell.dat[[temp.gated.marker]], j=as.numeric(cell.dat[[ g ]])  )
+---    
+---    
+---    passed.cells <- table(cell.dat[[ paste0("outside.", g) ]])[1]
+---    message(g, " GATE: ", passed.cells,    " cells (", round( passed.cells/nrow(cell.dat)*100,2)   ,"%) passed low-pass gate of ", temp.gated.marker    )
+---    
+---  } # end low-pass flagging   
+---  
+---  
+---  
+---  
+---} # end run with g along all threshold gates and create the Hgate or Lgate flag columns in cell.dat
+--+  } # end run with g along all threshold gates and create the Hgate or Lgate flag columns in cell.dat
+-- 
+---}# end flagging with threshold gates supplied in the metadata file
+--+} # end flagging with threshold gates supplied in the metadata file
+-- 
+-- 
+-- 
+--@@ -3251,6 +3221,11 @@ ggplot(cell.dat, aes(x = CD45..Mean)) +
+-- 
+-- } # end run.experimental.code
+-- 
+--+
+--+
+--+
+--+
+--+
+-- ###################### QC: gates and segmentation penalties ######################
+-- 
+-- 
+--@@ -3264,7 +3239,7 @@ all.gate.flags <- grep(".area", all.gate.flags, invert= TRUE, value = TRUE )
+-- # and we already wrote out the threshold gate column names: threshold.gates
+-- 
+-- # what we miss is a way to run through all.gate.flags and find the threshold by which they were created.
+---# if the flag was created with a threshold, you would find a column missing outside.:
+--+# if the flag was created with a threshold, you would find a column missing "outside." :
+-- all.marker.thresholds <-  sub("^.*?\\.", "", all.gate.flags) 
+-- # to keep the start of the sentence you need to do it this way around: ^, 
+-- #see https://stackoverflow.com/questions/72966851/r-how-to-extract-everything-after-first-occurance-of-a-dot
+--@@ -3279,16 +3254,6 @@ if(plot.TMAwise.gates == 1){
+--   setwd(OutputDirectory)
+--   dir.create('1 - QC Gates on TMAs')
+--   setwd('1 - QC Gates on TMAs')
+---  
+---
+---
+---
+---
+---  
+---
+---  
+---  
+---
+-- 
+--   # for the progess bar we need to differenciate whether we gonna loop through the gate flags at all or not:
+--   
+--diff --git a/global_settings.R b/global_settings.R
+--index 3f8b597..2f868c2 100644
+----- a/global_settings.R
+--+++ b/global_settings.R
+--@@ -1,8 +1,16 @@
+--+# if change code, use git diff > didf.txt, drop it on copilot and ask to make a message out of it
+-- run.experimental.code<-0
+--+
+-- ########################## STAGE 0 SETTINGS ##########################
+-- 
+--+# helper functions are stored in the utils file
+--+# define the version you want to use here:
+--+# use it for project-specific stuff
+--+# e.g: "0" will load utils_v0.R 
+--+utils_version <- "0" 
+--+
+-- # Do we start from scratch or re-load an old run?
+---# - - - - - - - - - - - - - - - - - - - - - - - - 
+--+#-------------------------------------------------
+-- # 0: Load all data saved away from previous run. 
+-- # Caution1: for 0 changes in the metadata file wont be incorporated since you skip STAGE 0
+-- # Caution2: Since you essentially skip STAGE 0-3 entirely, you need to supply a good amount of variables manually here: "COPY-PASTE VARIABLES IF YOU DO NOT GENERATE CELL.DAT ANEW"
+--@@ -10,10 +18,10 @@ run.experimental.code<-0
+-- rebuild.cell.data.anew <- 1 # 1 recommended 
+-- 
+-- # for rebuild.cell.data.anew=0: Reload an old run, so get backup data frames (such as gated.cell.dat) from this date:
+---date.of.clustered.gated.subsets <- 20231018 # date from where to load data: use 18th Oct to include the trashbin gate and proper cluster numbers in G2
+--+day.to.reload.data <- 20231018 # date from where to load data: use 18th Oct to include the trashbin gate and proper cluster numbers in G2
+-- 
+-- # Get the files from this add-masks integration run:
+---# - - - - - - - - - - - - - - - - - - - - - - - - - 
+--+#-------------------------------------------------
+-- # 20230113 comes from a global segementation model with all 4 TMAs
+-- # 20240524 is Steinbock but now with CK18 channel but mask.tiff in cell.dat somehow
+-- # 20240525 finally clean and good
+--@@ -22,14 +30,16 @@ date.of.spatial.dat <- 20240525 # do.fast.extract did that one
+-- 
+-- 
+-- # Get the metadata 
+---# - - - - - - - - - - - - - - - - - - -
+--+#-------------------------------------------------
+-- # Point to Metadata stored as excel sheet with an absolute path. This way you know exaclty what file was loaded.
+---#metadatapath <- c("D:/IMI/IMC/IM - Matthaus Felsenstein/Metadata_Project Matthäus Isis_JJ.xlsx") # cross-checked by Juliette, added the gate thresholds 20230313
+---# use additional metadata for the re-do of the data at v17+ 
+--+# for gate thresholds, is is crucial that they have the format:
+--+# CD123.highpass, CD122.lowpass
+--+# furthermore you need area.highpass and area.lowpass columns in square micrometers
+--+# this select cells area.highpass < segmentation areas < .lowpass area penalties
+-- metadatapath <- c("Small TMA_testing_metadata.xlsx") # cross-checked by Juliette, added the gate thresholds 20230313
+-- 
+-- # Data transformation and normalization:
+---# - - - - - - - - - - - - - - - - - - -
+--+#-------------------------------------------------
+-- # Transformation will create columns with a "_t5", short for asinh transformed with cofactor 5 (ry different factors and check if heatmap makes sense)
+-- # If this is turned on, the normalization will happen on these columns and not the raw data anymore!
+-- # Min-max normalize transformed signals? Additional to _t5, they will get "_m0m1" showing you the boundaries you have defined
+--@@ -50,7 +60,7 @@ cellular.segment.readout <- "Mean" # or "Median", "Min", "Max"
+-- 
+-- 
+-- # Spillover correction via excel sheet:
+---# - - - - - - - - - - - - - - - - - - -
+--+#-------------------------------------------------
+-- correct.spill.over <- 0 
+-- # 20211021_BeCeFa_spillmat.xlsx is from the panel design
+-- # 20200617_Messung6_sm.xlsx is from Franziska given on 20220601
+--@@ -62,19 +72,19 @@ correct.spill.over <- 0
+-- 
+-- 
+-- # Tissue types supplied via metadata. Positive Control core name
+---# - - - - - - - - - - - - - - - - - - - - - - - - -
+--+#-------------------------------------------------
+-- tissue.type.col <- "Tissue.type"
+-- postive.control.Tissue.name <- "spleen" # name of the tissue as defined in the metadata file. Watch out, these cells are deleted later on.
+-- 
+-- # depreciated:
+-- # Positive Control coreBatch normalization of markers present on pos-ctr. 
+---# - - - - - - - - - - - - - - - - - - - - - - - - -
+--+#-------------------------------------------------
+-- # if you want to do spillover and batch normalization, run stage 0 the first time with correct.spill.over 0 as well as scaling factors off
+-- # after you checked currently selected "Cellular cols", turn spillover and scaling on for the second+ runs (no worry, I will run it only once)
+-- # IMPORTANT: if you perform batch normalization, leave calculate.scaling.factors on 1 for the upcoming stages. Do NOT turn that back to 0!
+-- calculate.scaling.factors <- 0 # do batch normalization: 1, off: 0
+-- # Batchnormalization: Markers to normalize at the given percentile across all TMA. 
+---# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+--+#-------------------------------------------------
+-- # Data will be rescaled onto the n-th percentile of one marker
+-- # The one TMA whose set percentile signal is closest to the median of all TMA percentiles becomes the anchor sample: 
+-- # The anchor sample signal is then used to calculate the individual scaling factors for the remaining TMAs 
+--@@ -110,7 +120,7 @@ batch.normalization.matrix <- c(
+-- 
+-- 
+-- # Define which markers are transformed and normalized 
+---# - - - - - - - - - - - - - - - - - - - - - - - - - -
+--+#-------------------------------------------------
+-- 
+-- # since v18-ish we do no longer use column numbers to pull the markers since this is very fragile.
+-- # instead we supply the markers and let the code build up the column name by itself. 
+--@@ -159,7 +169,7 @@ Markers2Process <- c(
+-- 
+-- 
+-- # Set the order of the markers to show up in the heatmap 
+---# - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+--+#-------------------------------------------------
+-- # this needs manual adaptation. All markers that go into clustering will be plotted in the heatmap. 
+-- # you need them all in this list and give them some order that helps looking at the heatmap:
+-- 
+--@@ -178,7 +188,7 @@ global.marker.order <-Markers2Process
+-- 
+-- 
+-- # Define key columns supplied via metadata file
+---# - - - - - - - - - - - - - - - - - - - - - - - 
+--+#-------------------------------------------------
+-- # here we just plug the col names from the sample.meta: see above: # so from now on we need to all Sample as Sample_week Group as Diet Batch as Batch
+-- roi.col <- 'ROI'
+-- #sample.col we had Sample_week, but this does not allow me to split afterwards "Sample_week"
+--@@ -192,7 +202,7 @@ batch.col <- 'Image'
+-- 
+-- 
+-- # Define marker combinations that you need to look at when finding your gating routine
+---# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+--+#-------------------------------------------------
+-- # While plotting the scatter plot, the code will use different coloring:
+-- #  1) if no gate is present for any of the two markers, the plot comes with a soothing blue
+-- #  2) if a gate is found, the cells are color-coded according whether they passed the gate or not
+--@@ -213,7 +223,7 @@ scatter.plots <- list(
+-- 
+-- 
+-- # Quality Control and plots for setting up gating thresholds:
+---# - - - - - - - - - - - - - - - -
+--+#-------------------------------------------------
+-- # 1: Check positions of gates and segmentation area penalties?
+-- plot.TMAwise.gates <- 0
+-- # 2: Check the distribution of cell segementation area across TMAs and tissues?
+--@@ -235,7 +245,7 @@ scatterplots.gatingsteps.packaging = "marker"#-wise
+-- 
+-- # Set up gating routine (first part)
+-- # -> the second is found in the code at "SET UP GATING ROUTINE")
+---# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+--+#-------------------------------------------------
+-- 
+-- #lets define some names for the gated subsets that we can use to store the files with unique names as we run through the GATEsubset:
+-- # be aware that we gate all bounced back cells in an additional gate, the trash bin gate so to say. 
+--diff --git a/load_packages.R b/load_packages.R
+--index 9c419c9..c50fcd0 100644
+----- a/load_packages.R
+--+++ b/load_packages.R
+--@@ -39,6 +39,7 @@ library(ggrepel) # repelling labels in make.colour.plot
+-- library(scico) # just like brewer, another package to deliver color grads. We need that for the scatter plots of two variables, along with the stat_density_2d lines
+-- library(Polychrome) # another color palette aiming for colors maximally separated
+-- library(ggbeeswarm) # call quasirandom 
+--+library(gridExtra)
+-- #library(tidyverse) # use pipes to handle data.frames
+-- library(stringr) # use strings to process conditions. we use str_detect to pull out strings from Diet vector
+-- 
+--diff --git a/utils_v0.R b/utils_v0.R
+--index 6575e1b..2ab71d8 100644
+----- a/utils_v0.R
+--+++ b/utils_v0.R
+--@@ -1,6 +1,77 @@
+-- # Advanced spatial 2 - modified functions.R changed to: Phenalyzer_utils.R on 20250328 since PCF is incomaptible with the old code
+-- 
+---# Lets make a wrapper function to take care of all transformation and normalization in one go:
+--+
+--+#--------------------------------------
+--+# initialize stage0 varibables:
+--+#--------------------------------------
+--+
+--+initialize_stage_0_variables <- function(cell.dat, 
+--+                                        scatter.plots, 
+--+                                        transform.rawdata,
+--+                                       qupath.separator, 
+--+                                       cellular.segment.compartment, 
+--+                                       cellular.segment.readout, 
+--+                                       asinh.cofactor) {
+--+  
+--+  # Store the image and core names away for the upcoming plotting machines
+--+  all_images <- unique(cell.dat$Image)
+--+  amount.of.TMAs <- length(all_images)
+--+  
+--+  all_cores <- unique(cell.dat$TMA.ID_core)
+--+  amount.of.cores <- length(all_cores)
+--+  
+--+  # In the global settings, we work only with the marker names for convenience.
+--+  # We push the proper column names into the markercomparision list:
+--+  # Now there is a chance you dont want to transform, in that case these columns might not even exist:
+--+  if (transform.rawdata == TRUE) {
+--+    markercomparision <- lapply(scatter.plots, function(x) {
+--+      ifelse(is.na(x), NA,
+--+        paste0(
+--+          x,
+--+          qupath.separator,
+--+          cellular.segment.compartment,
+--+          qupath.separator,
+--+          cellular.segment.readout,
+--+          "_t", asinh.cofactor
+--+        )
+--+      )
+--+    })
+--+  } else {
+--+    # In this case the transform flag does not exist but only the raw columns:
+--+    markercomparision <- lapply(scatter.plots, function(x) {
+--+      ifelse(is.na(x), NA,
+--+        paste0(
+--+          x,
+--+          qupath.separator,
+--+          cellular.segment.compartment,
+--+          qupath.separator,
+--+          cellular.segment.readout
+--+        )
+--+      )
+--+    })
+--+  }
+--+  
+--+  # Return as a list instead of global assignment
+--+  return(list(
+--+    all_images = all_images,
+--+    amount.of.TMAs = amount.of.TMAs,
+--+    all_cores = all_cores,
+--+    amount.of.cores = amount.of.cores,
+--+    markercomparision = markercomparision
+--+  ))
+--+  
+--+}
+--+
+--+
+--+
+--+
+--+
+--+
+--+
+--+#--------------------------------------
+--+# transformation and normalization:
+--+#--------------------------------------
+--+
+-- do.data.normalization <- function (dat, 
+--                                    use.cols, 
+--                                    do.transform = FALSE,
+--@@ -83,8 +154,9 @@ do.data.normalization <- function (dat,
+-- 
+-- 
+-- 
+---
+---# lets make a wrapper function for the spill-over matrix correction of RAW data:
+--+#--------------------------------------
+--+# IMC: spill-over matrix correction
+--+#--------------------------------------
+-- do.spill.over.corr <- function( dat = cell.dat,
+--                                 spillover.matrix.path = spillover.matrix.path,
+--                                 donor.col.name = "acq.chnl"
+--@@ -221,6 +293,9 @@ do.spill.over.corr <- function( dat = cell.dat,
+-- 
+-- 
+-- 
+--+#--------------------------------------
+--+# Heatmap
+--+#--------------------------------------
+-- 
+-- # the old heatmap wrapper is gonna be depreciated soon. we use complex heatmap for this. Here are the functions we need:
+-- fh = function(x) fastcluster::hclust(dist(x))
+--@@ -543,7 +618,9 @@ make.pheatmap <- function (dat,
+-- 
+-- 
+-- 
+---
+--+#--------------------------------------
+--+# Colour plot functions
+--+#--------------------------------------
+-- make.colour.plot <- function (dat, x.axis, y.axis, 
+--                               point.alpha,  # I added an alpha channel for the geom_point for col.type=factor coloring plots
+--                               col.axis = NULL, col.type = "continuous", 
+--@@ -904,12 +981,6 @@ make.colour.plot <- function (dat, x.axis, y.axis,
+-- } # end function def make.colour.plot
+-- 
+-- 
+---
+---
+---
+---
+---
+---
+-- make.colour.plot.adapted <- function (dat, x.axis, y.axis, 
+--                               col.axis = NULL, col.type = "continuous", 
+--                               add.label = FALSE, hex = FALSE, hex.bins = 30, 
+--@@ -1320,20 +1391,6 @@ make.colour.plot.adapted <- function (dat, x.axis, y.axis,
+-- } # end function def make.colour.plot.adapted
+-- 
+-- 
+---
+---
+---
+---
+---
+---
+---
+---
+---
+---
+---
+---
+---
+---
+-- # Adapt some functions. These are based on v1.0.0 functions, but the adaptation is coming from when I tweaked them in 0.5.4. 
+-- # the setup of make.spatial.plot is still the same:
+-- #this is just a copy-paste of Advaced spatial 1 v2, but now we call it .adapted, since I changed the annotated cells and use global color palette...
+--@@ -1748,18 +1805,9 @@ make.spatial.plot.adapted <- function(dat, # spatial data object
+-- }#end make.spatial.plot adaptation
+-- 
+-- 
+---
+---
+---
+---
+---#CD45_Er168, ~GLP.1R_Yb174
+---
+---# this function requires three more variables that get produced as the engine runs trhough the markercomparision in a m-loop:
+---# it will strip off the _*isotope* and create a marker string of the AB:
+---#xMarker <- sub("_[^_]+$", "", markercomparision[[m]][1] )
+---#yMarker <- sub("_[^_]+$", "", markercomparision[[m]][2] )
+---#colorMarker <- sub("_[^_]+$", "", markercomparision[[m]][3] )  
+---# whith this strings, we match back in the meta or the multisegmented lines to plot additional stuff
+--+#--------------------------------------
+--+# Gating plotting functions
+--+#--------------------------------------
+-- 
+-- 
+-- plot.scatter.gate <- function(indata, 
+--@@ -2029,9 +2077,6 @@ plot.scatter.gate <- function(indata,
+--   
+-- } # end function def  plot.scatter.gate
+-- 
+---
+---
+---
+-- plot.scatter.gate.v2 <- function(indata, 
+--                                  inx, 
+--                                  iny, 
+--@@ -2247,8 +2292,6 @@ plot.scatter.gate.v2 <- function(indata,
+-- } # end function def  plot.scatter.gate.v2
+-- 
+-- 
+---
+---
+-- plot.scatter.density<- function(indata, 
+--                                 inx, 
+--                                 iny, 
+--@@ -2377,10 +2420,6 @@ plot.scatter.density<- function(indata,
+-- } # end function def  plot.scatter.density
+-- 
+-- 
+---
+---
+---
+---
+-- plot.scatter.density.v2 <- function(indata, 
+--                                     inx, 
+--                                     iny, 
+--@@ -2736,7 +2775,9 @@ plot.scatter.density.v2 <- function(indata,
+-- 
+-- 
+-- 
+---
+--+#--------------------------------------
+--+# Batch correction
+--+#--------------------------------------
+-- 
+-- # ............. Batch alignement percentages are globally defined and called like that within the function ......................
+-- # if you decide to change these, you need to adjust them inside the function as well!!
+--@@ -2751,7 +2792,9 @@ percentile_colors <- c('p60'='#a361c7','p80'='#5ba962','p85'='#c75a87','p90'='#a
+-- 
+-- 
+-- 
+---
+--+#--------------------------------------
+--+# Gating utilities
+--+#--------------------------------------
+-- 
+-- # ............. GATTING via OUTLIER Flags 1 or active data point 0 flag: ......................
+-- # The advantage of flagging outliers as 1 comes from my crstallography background, where reflections NOT participating in the model calculations are flagged with 1. 
+--@@ -2805,12 +2848,6 @@ function.range.penalty <- function(i,j,k){
+-- 
+-- 
+-- 
+---
+---
+---
+---
+---
+---
+-- # this is the function to return the values of the multisegmented line looking along y!
+-- 
+-- multisegmentGATEline <- function(x.var, y.var){
+--@@ -2836,9 +2873,9 @@ multisegmentGATEline <- function(x.var, y.var){
+-- 
+-- 
+-- 
+--+#--------------------------------------
+-- # cluster collapse functions:
+---
+---
+--+#--------------------------------------
+-- 
+-- 
+-- RMSD = function(x){
+--@@ -2849,8 +2886,6 @@ MAE = function(x){
+--   1/length(x) * sum(   abs( x - mean(x) )  )
+-- }
+-- 
+---
+---
+-- calc.homogeneity = function(m){
+--   
+--   # we first extract the currently present cluster numbers:
+--@@ -2873,7 +2908,6 @@ calc.homogeneity = function(m){
+--     
+--     
+--     
+---    
+--     #message(paste0("Cluster ", i, " RMSD: ", round( cluster.sum,3)  ))
+--     
+--     # we calculate RMSD of every marker, then sum up and add the RMSD-cluster-sum to the RMSD-subset-sum
+--@@ -2893,7 +2927,10 @@ calc.homogeneity = function(m){
+-- sort_hclust <- function(...) as.hclust(dendsort(as.dendrogram(...)))
+-- 
+-- 
+---# proximity index functions:
+--+
+--+#--------------------------------------
+--+# Spatial proximity index functions:
+--+#--------------------------------------
+-- extract.distance <- function(x=x,
+--                              y=y,
+--                              mask=mask){
+--@@ -2911,7 +2948,9 @@ lookup.binary.mask <- function(x=x,
+-- }
+-- 
+-- 
+---
+--+#--------------------------------------
+--+# Plotting and statistics utilities
+--+#--------------------------------------
+-- # for plotting log scale, we define some major and minor breaks:
+-- breaks <- 10^(-10:10)
+-- minor_breaks <- rep(1:9, 21)*(10^rep(-10:10, each=9))
+--@@ -2934,7 +2973,9 @@ sigStar.verticaloffset <- 0.1
+-- 
+-- 
+-- 
+---
+--+#--------------------------------------
+--+# depreciated..
+--+#--------------------------------------
+-- 
+-- make.autograph.adapted <- function (dat, x.axis, y.axis, colour.by = x.axis, y.axis.label = y.axis, 
+--                                     grp.order = NULL, 
+-diff --git a/environment_setup.R b/environment_setup.R
+-index 4eb097d..24326a5 100644
+---- a/environment_setup.R
+-+++ b/environment_setup.R
+-@@ -25,10 +25,19 @@ install_github_if_missing <- function(repo, pkg = NULL) {
+-   }
+- }
+- 
+-+install_github_devtools_if_missing <- function(repo, pkg = NULL) {
+-+  if (is.null(pkg)) pkg <- sub(".*/", "", repo)
+-+  if (!requireNamespace(pkg, quietly = TRUE)) {
+-+    if (!requireNamespace("devtools", quietly = TRUE)) install.packages("devtools")
+-+    devtools::install_github(repo)
+-+  }
+-+}
+-+
+-+
+- # CRAN packages
+- cran_packages <- c(
+--  "rstudioapi", "progress", "data.table", "dplyr", "tibble", "ggplot2", "ggpubr", "cowplot",
+--  "ggridges", "scico", "quasirandom", "DescTools", "Polychrome", "stringr", "gridExtra",
+-+  "devtools", "rstudioapi", "progress", "data.table", "dplyr", "tibble", "ggplot2", "cowplot",
+-+  "ggridges", "scico", "DescTools", "Polychrome", "stringr", "gridExtra",
+-   "patchwork", "tidyr", "magrittr", "forcats", "remotes", "uwot", "ggsignif", "ggrepel",
+-   "raster","tiff","sf","s2","stars","exactextractr","tidyr","readxl","ggbeeswarm",
+-    "fastcluster", "dendsort",  "ggh4x","tidygam","tidyverse"
+-@@ -49,10 +58,17 @@ bioc_packages <- c(
+- 
+- # GitHub packages
+- github_packages <- list(
+--  spectre = "immunedynamics/spectre",
+-   Rphenoannoy = "stuchly/Rphenoannoy",
+-+  ggpubr = "kassambara/ggpubr",
+-+  spectre = "immunedynamics/spectre" # <- make sure to install this last since its dependencies are fussy!
+-+  
+-    #Leiden: TomKellyGenetics Leiden engine (if needed)
+--   leiden = "TomKellyGenetics/leiden"
+-+   #leiden = "TomKellyGenetics/leiden"
+-+)
+-+
+-+# List of GitHub packages to install with devtools
+-+github_devtools_packages <- list(
+-+  ggpubr = "kassambara/ggpubr"
+- )
+- 
+- 
+-@@ -69,6 +85,9 @@ for (pkg in bioc_packages) install_bioc_if_missing(pkg)
+- # Install GitHub packages
+- for (pkg in github_packages) install_github_if_missing(pkg)
+- 
+-+# Install GitHub packages with devtools
+-+for (pkg in github_devtools_packages) install_github_devtools_if_missing(pkg)
+-+
+- # Load all packages (suppress warnings for already loaded)
+- all_packages <- c(
+-   cran_packages,
+-diff --git a/r_installer.sh b/r_installer.sh
+-old mode 100644
+-new mode 100755

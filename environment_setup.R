@@ -25,10 +25,19 @@ install_github_if_missing <- function(repo, pkg = NULL) {
   }
 }
 
+install_github_devtools_if_missing <- function(repo, pkg = NULL) {
+  if (is.null(pkg)) pkg <- sub(".*/", "", repo)
+  if (!requireNamespace(pkg, quietly = TRUE)) {
+    if (!requireNamespace("devtools", quietly = TRUE)) install.packages("devtools")
+    devtools::install_github(repo)
+  }
+}
+
+
 # CRAN packages
 cran_packages <- c(
-  "rstudioapi", "progress", "data.table", "dplyr", "tibble", "ggplot2", "ggpubr", "cowplot",
-  "ggridges", "scico", "quasirandom", "DescTools", "Polychrome", "stringr", "gridExtra",
+  "devtools", "rstudioapi", "progress", "data.table", "dplyr", "tibble", "ggplot2", "cowplot",
+  "ggridges", "scico", "DescTools", "Polychrome", "stringr", "gridExtra",
   "patchwork", "tidyr", "magrittr", "forcats", "remotes", "uwot", "ggsignif", "ggrepel",
   "raster","tiff","sf","s2","stars","exactextractr","tidyr","readxl","ggbeeswarm",
    "fastcluster", "dendsort",  "ggh4x","tidygam","tidyverse"
@@ -49,10 +58,17 @@ bioc_packages <- c(
 
 # GitHub packages
 github_packages <- list(
-  spectre = "immunedynamics/spectre",
   Rphenoannoy = "stuchly/Rphenoannoy",
+  ggpubr = "kassambara/ggpubr",
+  spectre = "immunedynamics/spectre" # <- make sure to install this last since its dependencies are fussy!
+  
    #Leiden: TomKellyGenetics Leiden engine (if needed)
-   leiden = "TomKellyGenetics/leiden"
+   #leiden = "TomKellyGenetics/leiden"
+)
+
+# List of GitHub packages to install with devtools
+github_devtools_packages <- list(
+  ggpubr = "kassambara/ggpubr"
 )
 
 
@@ -68,6 +84,9 @@ for (pkg in bioc_packages) install_bioc_if_missing(pkg)
 
 # Install GitHub packages
 for (pkg in github_packages) install_github_if_missing(pkg)
+
+# Install GitHub packages with devtools
+for (pkg in github_devtools_packages) install_github_devtools_if_missing(pkg)
 
 # Load all packages (suppress warnings for already loaded)
 all_packages <- c(
