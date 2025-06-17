@@ -128,6 +128,7 @@ Phenalyzer is a pipeline to process and analyze raw data PhenoCycler qptiff file
   ```bash
   sudo apt install pipx
   pipx install radian
+  pipx ensurepath
   ```
   - **Restart VS Code.**
   - after restarting VS Code, the bash terminal should be able to locate the radian installation. Type in the bash terminal:
