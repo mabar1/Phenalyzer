@@ -44,7 +44,7 @@ Phenalyzer is a pipeline to process and analyze raw data PhenoCycler qptiff file
     - `Windows Subsystem for Linux`
 
 - **Install PowerShell:**
-  - Download and install from [here]([https://code.visualstudio.com/](https://learn.microsoft.com/en-us/powershell/scripting/install/installing-powershell-on-windows?view=powershell-7.5)).
+  - Download and install from [microsoft webpage](https://learn.microsoft.com/en-us/powershell/scripting/install/installing-powershell-on-windows?view=powershell-7.5).
   - use command promt and install using ```winget install --id Microsoft.PowerShell --source winget```
 
 - **Install Visual Studio Code (VS Code):**
